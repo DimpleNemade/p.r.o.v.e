@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+.env
+node_modules/
+dist/
+playwright-report/
+test-results/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/Cargo.lock
+coverage/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.pytest-local-worker*/
+.mypy_cache/

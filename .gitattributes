@@ -1,0 +1,11 @@
+# Normalise line endings: store LF in the repo, check out native on Windows.
+* text=auto eol=lf
+
+# Windows-native scripts keep CRLF.
+*.ps1 text eol=crlf
+
+# Binary / generated lockfiles: no diff noise, no EOL munging.
+*.png binary
+*.jpg binary
+*.pdf binary
+package-lock.json -diff
