@@ -6,9 +6,9 @@ Phase 1 partially completed. The browser/API/worker workflow is verified locally
 
 ## Verification context
 
-- Date: 2026-08-19
-- Workspace: `C:\Users\Dimple\Downloads\AA`
-- Repository state: the workspace is not a Git checkout; no reset, checkout, deletion, or unrelated cleanup was performed.
+- Date: 2026-08-19 (this report is a point-in-time record; the repository was later placed under Git)
+- Workspace: the project repository root
+- Repository state at the time: not yet a Git checkout; no reset, checkout, deletion, or unrelated cleanup was performed.
 - Initial assessment: the scaffold contains Django/DRF apps for identity, cases, evidence, processing, investigations, reporting, and audit; a React/Vite browser app; a Tauri shell; a synthetic worker; Docker Compose; 12 Mermaid documents; and an existing test/documentation set.
 - Initial defect: root-level `python apps/api/manage.py test` collected zero tests because Django used the workspace root as its discovery root. The command now explicitly targets the `cases` app when no test label is supplied and discovers five tests.
 

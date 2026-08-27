@@ -1,61 +1,75 @@
 # Environment and toolchain
 
-Verification date: 2026-08-19  
-Workspace: `C:\Users\Dimple\Downloads\AA`
+## Required
 
-## Detected environment
+| Tool | Version | For |
+| --- | --- | --- |
+| Python | 3.12+ | API and worker |
+| Node.js + npm | 20+ (22 recommended) | web app |
+| Git | recent | source control |
 
-| Tool | Detected status |
+The local **SQLite** database and **eager Celery** mode are sufficient for the full
+browser workflow and all tests — no database server or broker required.
+
+## Optional
+
+| Tool | Needed only for |
 | --- | --- |
-| Windows | Windows host; exact build is emitted by `scripts/check_environment.ps1` |
-| Python | 3.12.4 |
-| Virtual environment | `.venv` present |
+| PostgreSQL + Redis | team mode and asynchronous processing |
+| Docker + Compose | running the `infra/compose` topology |
+| Rust + Cargo, MSVC / platform build tools | building the Tauri desktop shell |
+| Mermaid CLI | rendering diagrams to SVG/PNG (the repo validator checks source without it) |
+
+## Reference environment
+
+The versions the scaffold was built and first verified against (2026-08-19):
+
+| Component | Version |
+| --- | --- |
 | Django | 5.1.11 |
 | Django REST Framework | 3.15.2 |
-| Pytest | 8.3.5 |
-| Node.js | v22.23.2 |
+| Celery | 5.5.3 |
+| Python | 3.12.4 |
+| Node.js | 22.23.2 |
 | npm | 10.9.8 |
-| Rust/Cargo | Not available in the verification shell |
-| Tauri CLI | Optional desktop dependency; unavailable until desktop npm dependencies are installed |
-| Docker / Compose | Not available in the verification shell |
-| PostgreSQL client | Not available in the verification shell |
-| Redis client | Not available in the verification shell |
-| Frontend dependencies | `apps/web/node_modules` present |
-| Backend dependencies | Local imports available from `.venv` |
+| React | 18.3.1 |
+| Vite | 6.4.3 |
+| TypeScript | 5.9.3 |
 
-## Required tools
+Backend dependencies are pinned in `apps/api/requirements.txt`; frontend in
+`apps/web/package-lock.json`.
 
-Python 3.12+, a project virtual environment, the pinned backend requirements, Node.js/npm, and the frontend dependencies are required for the browser-supported V0.1 workflow. The local SQLite database and eager Celery mode are sufficient for deterministic development and tests.
+## Install
 
-## Optional tools
-
-Rust/Cargo and Tauri prerequisites are required only for the desktop shell. Docker Desktop, PostgreSQL, and Redis are required only for team-mode infrastructure verification and asynchronous processing. Mermaid CLI is optional because the repository validator checks the embedded source blocks without rendering.
-
-## Installation
-
-From the workspace root in PowerShell:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r apps\api\requirements.txt
-cd apps\web
-npm.cmd install
-cd ..\..\apps\desktop
-npm.cmd install
+```bash
+# from the repository root
+python3 -m venv .venv                       # Windows: py -3.12 -m venv .venv
+source .venv/bin/activate                    # Windows PS: .\.venv\Scripts\Activate.ps1
+pip install -r apps/api/requirements.txt
+cd apps/web && npm install && cd ../..
+# optional desktop deps
+cd apps/desktop && npm install && cd ../..
 ```
 
-Install optional tooling with the available Windows package manager, for example `winget install Python.Python.3.12`, `winget install OpenJS.NodeJS.LTS`, `winget install Rustlang.Rustup`, and `winget install Docker.DockerDesktop`. Restart may be required after Rustup or Docker Desktop installation. Do not install PostgreSQL or Redis alternatives solely to satisfy this check.
+On Windows, install optional tooling with `winget`, e.g.
+`winget install OpenJS.NodeJS.LTS`, `winget install Rustlang.Rustup`,
+`winget install Docker.DockerDesktop` (a restart may be needed after Rustup or Docker).
+On macOS use Homebrew; on Linux use the distribution package manager. Do not install
+PostgreSQL or Redis substitutes solely to satisfy an environment check.
 
-## Rerun the check
-
-PowerShell execution policy may block local `.ps1` files. Run the check without changing the machine policy:
+## Environment check script (Windows helper)
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\check_environment.ps1
 ```
 
-The script reports required and optional tools separately, does not print environment values or secrets, and returns a non-zero exit code when required checks fail.
+Reports required and optional tools separately, prints no secrets or environment
+values, and exits non-zero when a required check fails.
 
-## Platform limitations
+## Platform notes
 
-The browser application is the supported local path. The Tauri shell cannot be verified without Rust/Cargo and MSVC/Windows SDK prerequisites. PostgreSQL/Redis/Docker are not considered verified merely because Compose configuration exists; they must be available and exercised in a separate infrastructure run. Production deployments must replace the development `SECRET_KEY` placeholder and enable HTTPS/HSTS settings explicitly.
+- The **browser app is the supported path.** The Tauri shell needs Rust/Cargo and
+  platform build tools and is otherwise unverified.
+- PostgreSQL/Redis/Docker are not "verified" just because the Compose file exists — they
+  must be available and exercised in a separate infrastructure run.
+- Production must replace the development `SECRET_KEY` and enable HTTPS/HSTS explicitly.
