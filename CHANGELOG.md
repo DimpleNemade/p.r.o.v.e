@@ -6,6 +6,10 @@
 - Initialised the Git repository with history grouped by component.
 - Updated the API schema title, web and desktop package names, and the Tauri bundle identity to match.
 - Added `.gitattributes` for line-ending normalisation.
+- Rewrote the README as a full project introduction: problem statement, origin,
+  use cases, landscape positioning, cross-platform setup, and embedded
+  architecture and workflow Mermaid diagrams.
+- Recorded ownership in `LICENSE`.
 
 ## 0.1.0 - 2026-08-19
 
