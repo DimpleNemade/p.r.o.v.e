@@ -1,21 +1,25 @@
 from rest_framework import serializers
+
+from audit.models import AuditEvent
 from .models import Case, CaseParticipant
-from evidence.models import EvidenceItem, CustodyEvent
-from processing.models import ProcessingJob
+from evidence.models import CustodyEvent, EvidenceHash, EvidenceItem
 from investigations.models import (
     Artifact,
-    TimelineEvent,
-    ProvenanceLink,
-    Bookmark,
-    InvestigatorNote,
     Finding,
     FindingSupport,
+    InvestigatorNote,
+    Bookmark,
+    ProvenanceLink,
+    TimelineEvent,
 )
-from reporting.models import Report, ExportPackage
-from audit.models import AuditEvent
+from processing.models import ProcessingJob, ProcessingRun
+from reporting.models import ExportPackage, Report
 
 
 class CaseSerializer(serializers.ModelSerializer):
+    evidence_count = serializers.IntegerField(source="evidence_items.count", read_only=True)
+    finding_count = serializers.IntegerField(source="findings.count", read_only=True)
+
     class Meta:
         model = Case
         fields = [
@@ -27,8 +31,17 @@ class CaseSerializer(serializers.ModelSerializer):
             "owner",
             "created_at",
             "updated_at",
+            "evidence_count",
+            "finding_count",
         ]
-        read_only_fields = ["id", "owner", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "owner",
+            "created_at",
+            "updated_at",
+            "evidence_count",
+            "finding_count",
+        ]
 
 
 class ParticipantSerializer(serializers.ModelSerializer):
@@ -38,7 +51,43 @@ class ParticipantSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
+class CustodySerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.display_name", read_only=True)
+
+    class Meta:
+        model = CustodyEvent
+        fields = [
+            "id",
+            "case",
+            "evidence",
+            "action",
+            "actor",
+            "actor_name",
+            "details",
+            "created_at",
+        ]
+        read_only_fields = ["id", "actor", "created_at"]
+
+
+class EvidenceHashSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EvidenceHash
+        fields = ["id", "algorithm", "value", "source", "created_at"]
+        read_only_fields = [f.name for f in EvidenceHash._meta.fields]
+
+
 class EvidenceSerializer(serializers.ModelSerializer):
+    processing_status = serializers.SerializerMethodField()
+    registered_by_name = serializers.CharField(source="registered_by.display_name", read_only=True)
+    synthetic_label = serializers.SerializerMethodField()
+
+    def get_processing_status(self, obj):
+        latest = obj.processing_jobs.order_by("-created_at").first()
+        return latest.status if latest else "not_started"
+
+    def get_synthetic_label(self, obj):
+        return "Synthetic data" if obj.is_synthetic else "Operator-registered evidence"
+
     class Meta:
         model = EvidenceItem
         fields = [
@@ -53,28 +102,57 @@ class EvidenceSerializer(serializers.ModelSerializer):
             "calculated_hash",
             "verification_status",
             "read_only",
+            "is_synthetic",
+            "synthetic_label",
+            "warnings",
+            "limitations",
             "registered_by",
+            "registered_by_name",
             "registered_at",
             "updated_at",
+            "processing_status",
         ]
         read_only_fields = [
             "id",
             "registered_by",
+            "registered_by_name",
             "registered_at",
             "updated_at",
             "calculated_hash",
             "verification_status",
+            "processing_status",
+            "synthetic_label",
         ]
 
 
-class CustodySerializer(serializers.ModelSerializer):
+class EvidenceDetailSerializer(EvidenceSerializer):
+    custody_events = CustodySerializer(many=True, read_only=True)
+    hashes = EvidenceHashSerializer(many=True, read_only=True)
+
+    class Meta(EvidenceSerializer.Meta):
+        fields = EvidenceSerializer.Meta.fields + ["custody_events", "hashes"]
+
+
+class ProcessingRunSerializer(serializers.ModelSerializer):
     class Meta:
-        model = CustodyEvent
-        fields = ["id", "case", "evidence", "action", "actor", "details", "created_at"]
-        read_only_fields = ["id", "actor", "created_at"]
+        model = ProcessingRun
+        fields = [
+            "id",
+            "job",
+            "processor_name",
+            "processor_version",
+            "status",
+            "warnings",
+            "errors",
+            "started_at",
+            "finished_at",
+        ]
+        read_only_fields = [f.name for f in ProcessingRun._meta.fields]
 
 
 class JobSerializer(serializers.ModelSerializer):
+    runs = ProcessingRunSerializer(many=True, read_only=True)
+
     class Meta:
         model = ProcessingJob
         fields = [
@@ -86,6 +164,7 @@ class JobSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+            "runs",
         ]
         read_only_fields = [
             "id",
@@ -94,6 +173,7 @@ class JobSerializer(serializers.ModelSerializer):
             "error_message",
             "created_at",
             "updated_at",
+            "runs",
         ]
 
 
@@ -118,6 +198,24 @@ class ArtifactSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = [f.name for f in Artifact._meta.fields]
+
+
+class ArtifactDetailSerializer(ArtifactSerializer):
+    source_evidence = EvidenceSerializer(read_only=True)
+    processing_run = ProcessingRunSerializer(read_only=True)
+    timeline_events = serializers.SerializerMethodField()
+    related_findings = serializers.SerializerMethodField()
+
+    def get_timeline_events(self, obj):
+        return TimelineSerializer(obj.timeline_events.all(), many=True).data
+
+    def get_related_findings(self, obj):
+        return FindingSerializer(
+            Finding.objects.filter(supports__artifact=obj).distinct(), many=True
+        ).data
+
+    class Meta(ArtifactSerializer.Meta):
+        fields = ArtifactSerializer.Meta.fields + ["timeline_events", "related_findings"]
 
 
 class TimelineSerializer(serializers.ModelSerializer):
@@ -151,7 +249,23 @@ class ProvenanceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
+class FindingSupportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FindingSupport
+        fields = ["id", "finding", "artifact", "timeline_event", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate(self, attrs):
+        if not attrs.get("artifact") and not attrs.get("timeline_event"):
+            raise serializers.ValidationError("Attach an artifact or timeline event.")
+        if attrs.get("artifact") and attrs.get("timeline_event"):
+            raise serializers.ValidationError("Attach one support source per relationship.")
+        return attrs
+
+
 class FindingSerializer(serializers.ModelSerializer):
+    support_count = serializers.IntegerField(source="supports.count", read_only=True)
+
     class Meta:
         model = Finding
         fields = [
@@ -159,21 +273,44 @@ class FindingSerializer(serializers.ModelSerializer):
             "case",
             "author",
             "finding_text",
+            "finding_basis",
             "examiner_status",
             "review_status",
             "reviewer_comments",
             "reviewed_at",
             "created_at",
             "updated_at",
+            "support_count",
         ]
-        read_only_fields = ["id", "author", "created_at", "updated_at", "reviewed_at"]
+        read_only_fields = [
+            "id",
+            "author",
+            "created_at",
+            "updated_at",
+            "reviewed_at",
+            "support_count",
+        ]
 
 
-class SupportSerializer(serializers.ModelSerializer):
+class FindingDetailSerializer(FindingSerializer):
+    supports = FindingSupportSerializer(many=True, read_only=True)
+
+    class Meta(FindingSerializer.Meta):
+        fields = FindingSerializer.Meta.fields + ["supports"]
+
+
+class BookmarkSerializer(serializers.ModelSerializer):
     class Meta:
-        model = FindingSupport
-        fields = ["id", "finding", "artifact", "timeline_event", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        model = Bookmark
+        fields = ["id", "case", "artifact", "created_by", "label", "created_at"]
+        read_only_fields = ["id", "created_by", "created_at"]
+
+
+class NoteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvestigatorNote
+        fields = ["id", "case", "artifact", "author", "body", "created_at", "updated_at"]
+        read_only_fields = ["id", "author", "created_at", "updated_at"]
 
 
 class ReportSerializer(serializers.ModelSerializer):
@@ -183,13 +320,23 @@ class ReportSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
 
 
+class ExportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExportPackage
+        fields = ["id", "case", "report", "status", "manifest_hash", "requested_by", "created_at"]
+        read_only_fields = [f.name for f in ExportPackage._meta.fields]
+
+
 class AuditSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.display_name", read_only=True)
+
     class Meta:
         model = AuditEvent
         fields = [
             "id",
             "case",
             "actor",
+            "actor_name",
             "action",
             "object_type",
             "object_id",

@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.urls import path
+from audit.models import AuditEvent
 
 
 @api_view(["GET"])
@@ -28,6 +29,13 @@ def sign_in(request):
     if not user:
         return Response({"detail": "Invalid credentials."}, status=400)
     login(request, user)
+    AuditEvent.objects.create(
+        actor=user,
+        action="login",
+        object_type="User",
+        object_id=str(user.id),
+        metadata={"authentication": "session"},
+    )
     return Response(
         {"id": str(user.id), "username": user.username, "displayName": str(user), "role": user.role}
     )
@@ -35,6 +43,14 @@ def sign_in(request):
 
 @api_view(["POST"])
 def sign_out(request):
+    if request.user.is_authenticated:
+        AuditEvent.objects.create(
+            actor=request.user,
+            action="logout",
+            object_type="User",
+            object_id=str(request.user.id),
+            metadata={"authentication": "session"},
+        )
     logout(request)
     return Response(status=204)
 
