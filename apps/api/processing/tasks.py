@@ -1,7 +1,8 @@
-import hashlib
 from pathlib import Path
 from django.utils import timezone
 from celery import shared_task
+from audit.models import AuditEvent
+from evidence.services import calculate_sha256
 from .models import ProcessingJob, ProcessingRun
 from investigations.models import Artifact, TimelineEvent, ProvenanceLink
 
@@ -20,13 +21,8 @@ def process_evidence_job(job_id):
         path = Path(evidence.original_path)
         if not path.is_file():
             raise FileNotFoundError("Evidence path is not readable")
-        digest = hashlib.sha256()
-        size = 0
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-                size += len(chunk)
-        actual = digest.hexdigest()
+        actual = calculate_sha256(str(path))
+        size = path.stat().st_size
         if evidence.expected_hash and evidence.expected_hash.lower() != actual:
             evidence.calculated_hash = actual
             evidence.verification_status = "mismatch"
@@ -68,6 +64,18 @@ def process_evidence_job(job_id):
         run.save(update_fields=["status", "finished_at", "warnings"])
         job.status = "succeeded"
         job.save(update_fields=["status", "updated_at"])
+        AuditEvent.objects.create(
+            case=job.case,
+            actor=job.requested_by,
+            action="processing.completed",
+            object_type="ProcessingJob",
+            object_id=str(job.id),
+            metadata={
+                "artifact_id": str(artifact.id),
+                "processor": run.processor_name,
+                "version": run.processor_version,
+            },
+        )
         return {"status": "succeeded", "artifact_id": str(artifact.id)}
     except Exception as exc:
         run.status = "failed"
@@ -77,4 +85,12 @@ def process_evidence_job(job_id):
         job.status = "failed"
         job.error_message = str(exc)
         job.save(update_fields=["status", "error_message", "updated_at"])
+        AuditEvent.objects.create(
+            case=job.case,
+            actor=job.requested_by,
+            action="processing.failed",
+            object_type="ProcessingJob",
+            object_id=str(job.id),
+            metadata={"error": str(exc)[:200]},
+        )
         return {"status": "failed", "error": str(exc)}
