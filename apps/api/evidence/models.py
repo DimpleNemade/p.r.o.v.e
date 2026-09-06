@@ -25,6 +25,9 @@ class EvidenceItem(models.Model):
         ],
     )
     read_only = models.BooleanField(default=True)
+    is_synthetic = models.BooleanField(default=False)
+    warnings = models.JSONField(default=list, blank=True)
+    limitations = models.JSONField(default=list, blank=True)
     registered_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="registered_evidence"
     )

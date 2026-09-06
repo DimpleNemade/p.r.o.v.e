@@ -110,6 +110,11 @@ class Finding(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="findings")
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     finding_text = models.TextField()
+    finding_basis = models.CharField(
+        max_length=30,
+        default="observed",
+        choices=[("observed", "Observed evidence"), ("interpreted", "Normalized interpretation")],
+    )
     examiner_status = models.CharField(
         max_length=30,
         default="draft",
