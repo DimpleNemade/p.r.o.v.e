@@ -6,7 +6,7 @@
 
 *From acquired evidence to a defensible finding — without ever losing the thread back to the source.*
 
-![status](https://img.shields.io/badge/status-V0.1%20foundation-orange)
+![status](https://img.shields.io/badge/status-V0.1%20core%20workflow-orange)
 ![python](https://img.shields.io/badge/python-3.12%2B-3776AB)
 ![node](https://img.shields.io/badge/node-20%2B-3C873A)
 ![api](https://img.shields.io/badge/API-Django%205.1%20%2B%20DRF-092E20)
@@ -212,13 +212,13 @@ admin@example.test  /  ChangeMe-V0.1-only
 
 ### 4. Walk the workflow
 
-The seed created a synthetic case, **`DEMO-0001`**, with one synthetic evidence file. From the workspace:
+The seed created a synthetic case, **`DEMO-0001`**, with three synthetic evidence files and three derived artifacts. From the workspace:
 
-1. Open `DEMO-0001` and **Verify** the evidence — watch the SHA-256 and status update.
-2. **Process** it — a normalized artifact, a timeline event, and a provenance link appear.
-3. Open the **Provenance chain** panel and follow the artifact back to its source evidence.
-4. Add a **draft finding** and generate a **report draft**.
-5. Check **Audit history** — every step you just took is there, in order.
+1. Open `DEMO-0001` and inspect an evidence item, then **Verify** its SHA-256.
+2. **Process** verified evidence — normalized artifacts, timeline events, and provenance links appear.
+3. Open an artifact detail and follow its **Provenance chain** back to source evidence.
+4. Add a **draft finding**, attach artifact or timeline support, and generate a **report preview**.
+5. Check **Audit history** — login, verification, processing, finding, support, and report actions are visible.
 
 To see failure handling, the backend tests cover it directly: a deliberately wrong `expected_hash` makes verification report `mismatch`, and the processing job then fails and is recorded in both the custody and audit trails (`apps/api/cases/tests.py`).
 
@@ -290,7 +290,7 @@ The long-term intent is to wrap trusted open engines behind stable contracts tha
 | Processing | Separate Python worker, Celery + Redis, synchronous mode for local dev |
 | Web | React 18, TypeScript, Vite, custom CSS; Vitest + Testing Library + Playwright |
 | Desktop | Tauri 2 shell (optional) |
-| Docs | 18 engineering documents, 9 ADRs, 12 Mermaid diagrams with a validator |
+| Docs | Engineering documents, ADRs, 18 Mermaid diagrams with a validator |
 
 Architecture rationale is recorded as ADRs in [`docs/decisions/`](docs/decisions/README.md).
 
@@ -338,6 +338,7 @@ Threat model and data-protection notes: [`docs/10-security-threat-model.md`](doc
 | Validation & testing | [`docs/12-validation-and-testing.md`](docs/12-validation-and-testing.md) |
 | AI governance boundary | [`docs/14-ai-governance-boundary.md`](docs/14-ai-governance-boundary.md) |
 | User workflows | [`docs/15-user-workflows.md`](docs/15-user-workflows.md) |
+| Step 2 core workflow | [`docs/19-step-2-core-investigator-workflow.md`](docs/19-step-2-core-investigator-workflow.md) |
 | Glossary | [`docs/16-glossary.md`](docs/16-glossary.md) |
 | Architecture decisions | [`docs/decisions/README.md`](docs/decisions/README.md) |
 | Diagrams | [`docs/diagrams/README.md`](docs/diagrams/README.md) |

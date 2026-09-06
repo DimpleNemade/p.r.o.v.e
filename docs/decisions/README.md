@@ -15,3 +15,4 @@ supersedes the old one.
 | [007](007-celery-redis.md) | Celery + Redis for processing jobs | accepted |
 | [008](008-v01-exclusions.md) | Exclude high-risk capabilities from V0.1 | accepted |
 | [009](009-provenance-first.md) | Provenance as a first-class data model | accepted |
+| [010](010-core-investigator-workflow.md) | Explicit, versioned investigator workflow | accepted |

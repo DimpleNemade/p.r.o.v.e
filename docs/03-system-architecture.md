@@ -46,6 +46,15 @@ flowchart TB
 
 ## Invariants
 
+The canonical API surface is versioned under `/api/v1/`; equivalent `/api/` paths remain
+available as compatibility aliases for the scaffold. The investigator journey is
+implemented as explicit read/detail transitions: case list, case workspace, evidence
+detail and verification, processing job, artifact detail, provenance, timeline,
+finding/support, report preview, and audit history.
+
+The browser receives structured metadata and derived artifact content only. It does not
+receive raw evidence bytes, and the worker never mutates the registered source.
+
 - The worker never writes to original evidence and never logs raw evidence contents.
 - The database is authoritative. Search — and any future index — is **derived and
   rebuildable**, with source pointers.

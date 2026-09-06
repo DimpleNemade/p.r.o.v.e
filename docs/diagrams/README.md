@@ -20,6 +20,12 @@ repo.
 | 10 | [Deployment topology](10-deployment-topology.md) | flowchart |
 | 11 | [V0.1 scope boundary](11-v0.1-scope-boundary.md) | flowchart |
 | 12 | [Future expansion roadmap](12-future-expansion-roadmap.md) | flowchart |
+| 13 | [Core investigator workflow](13-core-investigator-workflow.md) | flowchart |
+| 14 | [Evidence-to-finding sequence](14-evidence-to-finding-sequence.md) | sequence |
+| 15 | [Artifact provenance navigation](15-artifact-provenance-navigation.md) | flowchart |
+| 16 | [Finding-support relationship](16-finding-support-relationship.md) | erDiagram |
+| 17 | [Report-generation flow — Step 2](17-report-generation-flow-step-2.md) | flowchart |
+| 18 | [User permission flow](18-user-permission-flow.md) | flowchart |
 
 ## Validation
 

@@ -17,7 +17,7 @@ the model layer — only hashes, paths, and structured metadata.
 | identity | `User` | `AbstractUser` + UUID id, `display_name`, `role` (administrator, supervisor, investigator, reviewer, auditor, student) |
 | cases | `Case` | unique `reference`, `status` (open/review/closed), `owner` |
 | cases | `CaseParticipant` | `permission` (owner/edit/review/read); unique per (case, user) |
-| evidence | `EvidenceItem` | `original_path`, `acquisition_metadata`, `expected_hash`, `calculated_hash`, `verification_status` (unverified/verified/mismatch/unreadable), `read_only` |
+| evidence | `EvidenceItem` | `original_path`, `acquisition_metadata`, `expected_hash`, `calculated_hash`, `verification_status` (unverified/verified/mismatch/unreadable), `read_only`, synthetic flag, warnings, limitations |
 | evidence | `EvidenceHash` | one recorded hash value with algorithm and source |
 | evidence | `CustodyEvent` | append-only; `action`, `actor`, `details`; ordered oldest-first |
 | processing | `ProcessingJob` | `status` (queued/running/succeeded/failed), `error_message` |
@@ -26,7 +26,7 @@ the model layer — only hashes, paths, and structured metadata.
 | investigations | `TimelineEvent` | `interpretation_status` (observed/normalized/suggestion/approved) |
 | investigations | `ProvenanceLink` | `relationship` (default `derived_from`); unique per (source_evidence, artifact, relationship) |
 | investigations | `Bookmark`, `InvestigatorNote` | model only in V0.1 |
-| investigations | `Finding` | `examiner_status` (draft/approved/withdrawn), `review_status` (not_reviewed/in_review/reviewed) |
+| investigations | `Finding` | `finding_basis` (observed/interpreted), `examiner_status` (draft/approved/withdrawn), `review_status` (not_reviewed/in_review/reviewed) |
 | investigations | `FindingSupport` | check constraint: at least one of `artifact` or `timeline_event` |
 | reporting | `Report` | `body` (JSON snapshot), `status` |
 | reporting | `ExportPackage` | `manifest_hash`, optional `report` |
@@ -56,6 +56,7 @@ erDiagram
   CASE ||--o{ REPORT : "produces"
   REPORT ||--o{ EXPORT_PACKAGE : "packaged as"
   CASE ||--o{ AUDIT_EVENT : "records"
+  USER ||--o{ AUDIT_EVENT : "acts in"
 ```
 
 ## Deletion behavior

@@ -20,7 +20,8 @@ python -m pytest services/forensic-worker/tests
 
 The current `apps/api/cases/tests.py` covers: unauthenticated rejection, CSRF-protected
 login, case isolation for a non-participant, evidence hash + processing producing an
-artifact and provenance and audit events, and hash mismatch causing the job to fail.
+artifact and provenance and audit events, hash mismatch blocking processing, and the
+versioned detail/support/report/audit workflow against the seeded synthetic case.
 
 Windows convenience wrappers: `scripts/check_environment.ps1` (toolchain report),
 `scripts/run_backend_tests.ps1` (Django suite then worker suite, with counts).
@@ -36,9 +37,9 @@ npm run format:check
 npm run e2e           # playwright
 ```
 
-The E2E suite currently checks only the login screen and does not need a live API. Full
-authenticated workflow coverage requires the API and a seeded database running, and is
-an open item.
+The Playwright suite starts the API and Vite dev server, seeds the database, and checks
+login → case → evidence verify → process → artifact/provenance → finding/support → report
+preview → audit. It intentionally exercises synthetic data only.
 
 ## Diagrams
 
@@ -52,8 +53,9 @@ closing fence**.
 ## Honest status
 
 - Backend: a small but real suite covering the security- and provenance-critical paths.
-- Frontend: placeholder coverage; the component test does not yet render the app.
-- E2E: login only.
+- Frontend: login rendering and API interaction are covered by Vitest; the main journey is
+  covered by Playwright.
+- E2E: authenticated core investigator journey passes locally.
 - No ground-truth corpus, differential testing, or timestamp-semantics tests yet.
 
 See [19 Phase 0 gap analysis](19-phase-0-gap-analysis.md) and

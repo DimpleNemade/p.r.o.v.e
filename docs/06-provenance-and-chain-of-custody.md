@@ -11,8 +11,10 @@ Two append-only records sit under the whole workflow. They answer different ques
 
 A `CustodyEvent` records `action`, `actor`, `details`, and `created_at`, ordered
 oldest-first. Events are written by the application on registration and on every
-verification outcome (`registered`, `hash_verified`, `hash_verification_failed`). There
-is no API route to edit or delete them.
+verification outcome (`registered`, `hash_verified`, `hash_mismatch`,
+`hash_verification_failed`). Processing, finding/support, report, login, and logout
+actions are also recorded in the audit ledger. There is no API route to edit or delete
+these records.
 
 ## Provenance
 
@@ -49,3 +51,8 @@ The intended export package binds evidence identifiers, hashes, processor/rule v
 parameters, source references, and recorded limitations so a reviewer can reconstruct
 the method. V0.1 ships the export **endpoint as a placeholder** (it returns a receipt,
 emits no file); the data it would need already exists in the models above.
+
+The artifact detail endpoint exposes the navigation chain used by the investigator UI:
+artifact → processing run → source evidence detail → provenance links → timeline events →
+related findings. A missing link is returned as an empty relationship and displayed as a
+review state; the service never invents provenance.

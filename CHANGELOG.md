@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - Step 2 core investigator workflow
+
+- Added versioned `/api/v1` routes with `/api/` compatibility aliases.
+- Added case, evidence, artifact, timeline, provenance, finding, report, and audit detail flows with explicit serializers and error codes.
+- Enforced verify-before-process and recorded verification, processing, finding/support, report, login, and logout audit events.
+- Expanded the idempotent synthetic seed to three evidence fixtures, three processing runs, artifacts, timeline events, provenance links, a finding, support, report, and audit history.
+- Added authenticated browser coverage for the complete investigator journey and dedicated detail panels in the web workspace.
+- Added Step 2 architecture notes and Mermaid workflow, sequence, provenance, support, reporting, and permission diagrams.
+
 ## 0.1.1 - 2026-08-27
 
 - Renamed the project to P.R.O.V.E (Provenance, Register, Observe, Verify, Examine).
