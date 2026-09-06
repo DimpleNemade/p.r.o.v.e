@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.core.management import call_command
 from rest_framework.test import APIClient
 from .models import Case, CaseParticipant
 from evidence.models import EvidenceItem
@@ -118,7 +119,95 @@ class InvestigationApiTests(TestCase):
             job = self.client.post(
                 f"/api/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
             )
-            assert job.status_code == 201
-            assert ProcessingJob.objects.get(pk=job.data["id"]).status == "failed"
+            assert job.status_code == 409
+            assert job.data["code"] == "integrity_required"
         finally:
             source.unlink(missing_ok=True)
+
+    def test_v1_workflow_details_support_report_and_audit(self):
+        source = Path(self._make_fixture("workflow.txt", b"workflow evidence"))
+        try:
+            expected = hashlib.sha256(b"workflow evidence").hexdigest()
+            evidence = self.client.post(
+                f"/api/v1/cases/{self.case.id}/evidence/",
+                {
+                    "display_name": "workflow.txt",
+                    "original_path": str(source),
+                    "expected_hash": expected,
+                    "is_synthetic": True,
+                },
+                format="json",
+            )
+            evidence_id = evidence.data["id"]
+            verified = self.client.post(f"/api/v1/evidence/{evidence_id}/verify/")
+            assert verified.status_code == 200
+            assert self.client.get(f"/api/v1/evidence/{evidence_id}/").status_code == 200
+            job = self.client.post(
+                f"/api/v1/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
+            )
+            assert job.status_code == 201
+            job_detail = self.client.get(f"/api/v1/jobs/{job.data['id']}/")
+            assert job_detail.data["status"] == "succeeded"
+            artifact = Artifact.objects.get(source_evidence_id=evidence_id)
+            artifact_detail = self.client.get(f"/api/v1/artifacts/{artifact.id}/")
+            assert artifact_detail.status_code == 200
+            assert artifact_detail.data["processor_name"] == "basic-metadata"
+            chain = self.client.get(f"/api/v1/artifacts/{artifact.id}/provenance/")
+            assert chain.status_code == 200
+            assert chain.data["original_evidence"]["id"] == evidence_id
+            timeline = self.client.get(
+                f"/api/v1/cases/{self.case.id}/timeline/?event_type=file_registered"
+            )
+            assert timeline.status_code == 200
+            finding = self.client.post(
+                f"/api/v1/cases/{self.case.id}/findings/",
+                {"finding_text": "The synthetic file was observed.", "finding_basis": "observed"},
+                format="json",
+            )
+            assert finding.status_code == 201
+            support = self.client.post(
+                f"/api/v1/findings/{finding.data['id']}/support/",
+                {"artifact": str(artifact.id)},
+                format="json",
+            )
+            assert support.status_code == 201
+            report = self.client.post(
+                f"/api/v1/cases/{self.case.id}/reports/",
+                {"title": "Workflow preview"},
+                format="json",
+            )
+            assert report.status_code == 201
+            assert report.data["body"]["draftNotice"]
+            assert self.client.get(f"/api/v1/reports/{report.data['id']}/").status_code == 200
+            audit_actions = {
+                event["action"]
+                for event in self.client.get(f"/api/v1/cases/{self.case.id}/audit/").data
+            }
+            assert {
+                "evidence.hash_verified",
+                "processing.completed",
+                "finding.created",
+                "finding.support_attached",
+                "report.draft_generated",
+            }.issubset(audit_actions)
+        finally:
+            source.unlink(missing_ok=True)
+
+    def test_seed_demo_provides_complete_synthetic_case(self):
+        call_command("seed_demo")
+        case = Case.objects.get(reference="DEMO-0001")
+        assert (
+            case.evidence_items.filter(is_synthetic=True, verification_status="verified").count()
+            >= 2
+        )
+        assert case.artifacts.count() >= 3
+        assert case.timeline_events.count() >= 3
+        assert case.findings.filter(supports__isnull=False).distinct().exists()
+        assert case.reports.filter(status="draft").exists()
+
+    @staticmethod
+    def _make_fixture(name, contents):
+        handle = tempfile.NamedTemporaryFile(delete=False, suffix=name)
+        handle.write(contents)
+        handle.close()
+        return handle.name
