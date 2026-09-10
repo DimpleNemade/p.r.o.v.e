@@ -38,11 +38,11 @@ Concretely, for V0.1:
 | Area | Documents |
 | --- | --- |
 | Direction & scope | [01 Product constitution](01-product-constitution.md) · [02 V0.1 scope](02-v0.1-scope.md) |
-| Design | [03 System architecture](03-system-architecture.md) · [04 Domain model](04-domain-model.md) · [ADRs](decisions/README.md) |
+| Design | [03 System architecture](03-system-architecture.md) · [04 Domain model](04-domain-model.md) · [ADRs 001–010](decisions/README.md) |
 | Evidence & provenance | [05 Evidence lifecycle](05-evidence-lifecycle.md) · [06 Provenance & chain of custody](06-provenance-and-chain-of-custody.md) |
 | Access & processing | [07 Authentication & authorization](07-authentication-and-authorization.md) · [08 Processing jobs](08-processing-jobs.md) |
 | Interface | [09 API contract](09-api-contract.md) · [15 User workflows](15-user-workflows.md) |
 | Assurance | [10 Security threat model](10-security-threat-model.md) · [11 Data protection & privacy](11-data-protection-and-privacy.md) · [12 Validation & testing](12-validation-and-testing.md) · [14 AI governance boundary](14-ai-governance-boundary.md) |
 | Operations | [13 Deployment & operations](13-deployment-and-operations.md) · [18 Environment & toolchain](18-environment-and-toolchain.md) |
-| Reference | [16 Glossary](16-glossary.md) · [diagrams](diagrams/README.md) |
-| Status | [17 Phase 1 verification report](17-phase-1-verification-report.md) · [19 Phase 0 gap analysis](19-phase-0-gap-analysis.md) |
+| Reference | [16 Glossary](16-glossary.md) · [diagrams 01–18](diagrams/README.md) |
+| Milestones & status | [17 Phase 1 verification report](17-phase-1-verification-report.md) · [19 Phase 0 gap analysis](19-phase-0-gap-analysis.md) · [20 Step 2 core workflow](20-step-2-core-investigator-workflow.md) |
