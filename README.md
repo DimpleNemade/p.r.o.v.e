@@ -6,6 +6,7 @@
 
 *From acquired evidence to a defensible finding — without ever losing the thread back to the source.*
 
+[![CI](https://github.com/DimpleNemade/p.r.o.v.e/actions/workflows/ci.yml/badge.svg)](https://github.com/DimpleNemade/p.r.o.v.e/actions/workflows/ci.yml)
 ![status](https://img.shields.io/badge/status-V0.1%20core%20workflow-orange)
 ![python](https://img.shields.io/badge/python-3.12%2B-3776AB)
 ![node](https://img.shields.io/badge/node-20%2B-3C873A)
