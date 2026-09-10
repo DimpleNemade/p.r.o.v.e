@@ -338,8 +338,8 @@ Threat model and data-protection notes: [`docs/10-security-threat-model.md`](doc
 | Validation & testing | [`docs/12-validation-and-testing.md`](docs/12-validation-and-testing.md) |
 | AI governance boundary | [`docs/14-ai-governance-boundary.md`](docs/14-ai-governance-boundary.md) |
 | User workflows | [`docs/15-user-workflows.md`](docs/15-user-workflows.md) |
-| Step 2 core workflow | [`docs/19-step-2-core-investigator-workflow.md`](docs/19-step-2-core-investigator-workflow.md) |
 | Glossary | [`docs/16-glossary.md`](docs/16-glossary.md) |
+| Step 2 core workflow | [`docs/20-step-2-core-investigator-workflow.md`](docs/20-step-2-core-investigator-workflow.md) |
 | Architecture decisions | [`docs/decisions/README.md`](docs/decisions/README.md) |
 | Diagrams | [`docs/diagrams/README.md`](docs/diagrams/README.md) |
 

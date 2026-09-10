@@ -8,6 +8,7 @@
 - Expanded the idempotent synthetic seed to three evidence fixtures, three processing runs, artifacts, timeline events, provenance links, a finding, support, report, and audit history.
 - Added authenticated browser coverage for the complete investigator journey and dedicated detail panels in the web workspace.
 - Added Step 2 architecture notes and Mermaid workflow, sequence, provenance, support, reporting, and permission diagrams.
+- Renamed `docs/19-step-2-core-investigator-workflow.md` to `docs/20-step-2-core-investigator-workflow.md` so no two documents share the `19-` prefix.
 
 ## 0.1.1 - 2026-08-27
 
