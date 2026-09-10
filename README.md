@@ -342,6 +342,7 @@ Threat model and data-protection notes: [`docs/10-security-threat-model.md`](doc
 | Step 2 core workflow | [`docs/20-step-2-core-investigator-workflow.md`](docs/20-step-2-core-investigator-workflow.md) |
 | Architecture decisions | [`docs/decisions/README.md`](docs/decisions/README.md) |
 | Diagrams | [`docs/diagrams/README.md`](docs/diagrams/README.md) |
+| Contributing conventions | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
 ## Disclaimer
 
