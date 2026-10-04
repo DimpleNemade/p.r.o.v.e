@@ -1,7 +1,10 @@
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "config.test_settings"
 pythonpath = ["apps/api"]
 testpaths = ["apps/api", "services/forensic-worker/tests"]
+# Collect the per-app `tests.py` modules as well as `test_*.py`, so `pytest`
+# and `manage.py test` discover the same suite.
+python_files = ["test_*.py", "tests.py"]
 
 [tool.ruff]
 line-length = 100
