@@ -1,0 +1,63 @@
+name: Team integration
+
+# Real PostgreSQL, Redis/Celery and the Linux bwrap sandbox. ci.yml's "Backend" and
+# "Frontend" jobs already cover the local/SQLite profile; this workflow is additive —
+# it is the only place the team profile's database, queue and sandbox assumptions are
+# actually exercised.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  team-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: forensic, POSTGRES_USER: forensic, POSTGRES_PASSWORD: forensic-ci }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U forensic" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+    env:
+      PROVE_PROFILE: team
+      PROVE_INTEGRATION: "1"
+      DJANGO_SETTINGS_MODULE: config.integration_settings
+      SECRET_KEY: ci-only-strong-secret-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDE
+      DATABASE_URL: postgresql://forensic:forensic-ci@127.0.0.1:5432/forensic
+      REDIS_URL: redis://127.0.0.1:6379/0
+      ALLOWED_HOSTS: testserver,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: https://testserver
+      CORS_ALLOWED_ORIGINS: https://testserver
+      EVIDENCE_ROOT: /tmp/prove-ci/evidence
+      OUTPUT_ROOT: /tmp/prove-ci/output
+      CELERY_TASK_ALWAYS_EAGER: "false"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: pip install -r apps/api/requirements.txt
+      - run: mkdir -p /tmp/prove-ci/evidence /tmp/prove-ci/output
+      - run: python manage.py migrate --noinput
+        working-directory: apps/api
+      - name: Concurrency, publication and bwrap sandbox enforcement
+        run: python manage.py test processing.test_integration --noinput
+        working-directory: apps/api
