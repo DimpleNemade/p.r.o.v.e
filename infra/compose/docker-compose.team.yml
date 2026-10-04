@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: forensic
+      POSTGRES_USER: forensic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    networks: [backend]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forensic"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000", "--noreload"]
+    env_file: ../../.env.team
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [edge, backend]
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - evidence:/var/lib/prove/evidence:ro
+      - output:/var/lib/prove/output
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--pool=solo"]
+    env_file: ../../.env.team
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1770"]
+    volumes:
+      - evidence:/var/lib/prove/evidence:ro
+      - output:/var/lib/prove/output
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+networks:
+  edge:
+  backend:
+    internal: true
+volumes:
+  postgres-data:
+  evidence:
+  output:
