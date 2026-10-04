@@ -1,4 +1,1 @@
-from django.contrib import admin
-from .models import User
-
-admin.site.register(User)
+"""Account role changes require an operator management procedure, not generic admin forms."""
