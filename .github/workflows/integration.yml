@@ -54,6 +54,16 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements.txt
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Allow bwrap's unprivileged user+network namespaces
+        # Ubuntu 23.10+ restricts unprivileged user namespaces via AppArmor by
+        # default. bwrap still creates the namespace but then fails to bring up
+        # loopback inside it ("Failed RTM_NEWADDR: Operation not permitted"),
+        # which aborts the sandboxed child before it runs at all. This is a
+        # host kernel setting, not an application change — a real `team`
+        # deployment on a similarly hardened Ubuntu host needs the same
+        # adjustment (or an AppArmor profile permitting bwrap). Documented in
+        # docs/phase3/operations.md.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pip install -r apps/api/requirements.txt
       - run: mkdir -p /tmp/prove-ci/evidence /tmp/prove-ci/output
       - run: python manage.py migrate --noinput
