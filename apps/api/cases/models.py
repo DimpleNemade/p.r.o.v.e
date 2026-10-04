@@ -8,6 +8,7 @@ class Case(models.Model):
     reference = models.CharField(max_length=80, unique=True)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    ledger_sequence = models.PositiveBigIntegerField(default=0)
     status = models.CharField(
         max_length=30,
         default="open",
