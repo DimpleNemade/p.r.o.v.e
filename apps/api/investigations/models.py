@@ -40,7 +40,13 @@ class TimelineEvent(models.Model):
     artifact = models.ForeignKey(
         Artifact, on_delete=models.PROTECT, null=True, blank=True, related_name="timeline_events"
     )
-    observed_at = models.DateTimeField()
+    observed_at = models.DateTimeField(null=True, blank=True)
+    timestamp_original = models.TextField(blank=True)
+    timestamp_format = models.CharField(max_length=80, blank=True)
+    timestamp_zone = models.CharField(max_length=80, blank=True)
+    timestamp_meaning = models.CharField(max_length=80, default="unknown")
+    timestamp_precision = models.CharField(max_length=80, default="unknown")
+    timestamp_uncertainty = models.TextField(blank=True)
     event_type = models.CharField(max_length=80)
     summary = models.TextField()
     interpretation_status = models.CharField(
@@ -110,6 +116,7 @@ class Finding(models.Model):
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="findings")
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     finding_text = models.TextField()
+    version = models.PositiveIntegerField(default=1)
     finding_basis = models.CharField(
         max_length=30,
         default="observed",
@@ -163,3 +170,32 @@ class FindingSupport(models.Model):
                 name="finding_support_has_source",
             )
         ]
+
+
+class FindingRevision(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    finding = models.ForeignKey(Finding, on_delete=models.PROTECT, related_name="revisions")
+    number = models.PositiveIntegerField()
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="finding_revisions"
+    )
+    snapshot = models.JSONField()
+    snapshot_hash = models.CharField(max_length=64)
+    status = models.CharField(max_length=30, default="submitted")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["finding", "number"], name="finding_revision_number")
+        ]
+
+
+class ReviewDecision(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    revision = models.ForeignKey(
+        FindingRevision, on_delete=models.PROTECT, related_name="decisions"
+    )
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    decision = models.CharField(max_length=30)
+    comments = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
