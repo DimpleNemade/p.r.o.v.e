@@ -1,58 +1,25 @@
-# Provenance and chain of custody
+# Provenance, custody and verifiable history
 
-Two append-only records sit under the whole workflow. They answer different questions:
+Custody records who performed an evidence action. Provenance records which accepted
+evidence and processing run produced an artifact. Finding support and report revisions
+then bind those stored records; a missing link is returned and displayed as missing.
 
-| | Question it answers | Model |
-| --- | --- | --- |
-| **Chain of custody** | *Who did what to this evidence, and when?* | `evidence.CustodyEvent` |
-| **Provenance** | *Where did this derived record come from?* | `investigations.ProvenanceLink` |
+`prove.audit/1` serializes UTF-8 JSON with sorted keys, compact separators, no NaN and no
+Unicode normalization rewrite. Each event binds ID, case, sequence, actor, service,
+action, object, time, safe metadata digest, previous hash, and custody/provenance record
+digest. Case counter updates and unique `(case, sequence)` prevent duplicate positions.
+Business writes and their audit event share a transaction.
 
-## Chain of custody
+`verify_ledger` is read-only: it reports event modification, missing/reordered positions,
+record changes and retained-checkpoint mismatch and never repairs history. The Phase 3
+migration hashes legacy rows at a dated checkpoint. That is the first binding, not proof
+that earlier history was independently trusted.
 
-A `CustodyEvent` records `action`, `actor`, `details`, and `created_at`, ordered
-oldest-first. Events are written by the application on registration and on every
-verification outcome (`registered`, `hash_verified`, `hash_mismatch`,
-`hash_verification_failed`). Processing, finding/support, report, login, and logout
-actions are also recorded in the audit ledger. There is no API route to edit or delete
-these records.
-
-## Provenance
-
-A `ProvenanceLink` connects a `source_evidence` item to a derived `artifact` with a
-`relationship` (default `derived_from`) and a free-text `rationale`. The processing
-worker creates one for every artifact it produces. The triple
-`(source_evidence, artifact, relationship)` is unique.
-
-**Missing provenance is a review state, not an inference.** If an artifact has no
-provenance link, the UI shows that as something to resolve — it never guesses a
-relationship.
-
-```mermaid
-flowchart LR
-  E["Registered evidence + verified hash"] --> R["ProcessingRun<br/>(processor name + version)"]
-  R --> A["Normalized artifact"]
-  A --> T["TimelineEvent"]
-  A --> S["FindingSupport"]
-  S --> P["Report statement"]
-  E -. "custody events" .-> C[("Append-only custody ledger")]
-  A -. "provenance link" .-> L[("Append-only provenance ledger")]
+```powershell
+.\.venv\Scripts\python.exe apps\api\manage.py verify_ledger <case-uuid>
+.\.venv\Scripts\python.exe apps\api\manage.py verify_ledger <case-uuid> --checkpoint checkpoint.json
 ```
 
-## Why it is modelled separately
-
-A dedicated `ProvenanceLink` (rather than an implicit foreign key) lets the API, the UI,
-and a future export manifest make traceability **explicit and testable** — you can query
-"show every finding whose support chain does not reach verified evidence". See
-[ADR-009](decisions/009-provenance-first.md).
-
-## Toward the reproducibility package
-
-The intended export package binds evidence identifiers, hashes, processor/rule versions,
-parameters, source references, and recorded limitations so a reviewer can reconstruct
-the method. V0.1 ships the export **endpoint as a placeholder** (it returns a receipt,
-emits no file); the data it would need already exists in the models above.
-
-The artifact detail endpoint exposes the navigation chain used by the investigator UI:
-artifact → processing run → source evidence detail → provenance links → timeline events →
-related findings. A missing link is returned as an empty relationship and displayed as a
-review state; the service never invents provenance.
+A local chain cannot defeat an administrator who rewrites records and hashes. Tail
+deletion requires a separately retained checkpoint. There is no blockchain or absolute
+immutability claim.

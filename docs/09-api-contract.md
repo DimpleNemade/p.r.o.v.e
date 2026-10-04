@@ -1,78 +1,90 @@
 # API contract
 
-The OpenAPI schema is served at `/api/schema/` and Swagger UI at `/api/docs/`
-(drf-spectacular). This page is the human summary.
+Canonical routes use `/api/v1`; `/api` is a compatibility alias. JSON session writes need
+CSRF. Collection responses are `{count, limit, offset, results}` with `limit` 1–100,
+stable ordering and server-side filtering.
 
-`/api/v1/` is the canonical application route prefix. The same data endpoints are also
-mounted under `/api/` for compatibility with the Phase 1 scaffold. Auth is available at
-both `/api/v1/auth/` and `/api/auth/`.
-
-## Conventions
-
-- **Transport:** JSON over REST. Auth is a session cookie; mutating requests need the
-  `X-CSRFToken` header.
-- **Access:** every data route requires an authenticated session. Reads require
-  case read access; writes require case write access (`owner`/`edit`/`review`, or the
-  `administrator` role).
-- **Immutability:** custody, audit, and provenance have no update or delete routes.
-- **IDs:** all resource IDs are UUIDs.
-
-## Auth
-
-| Method | Path | Purpose |
+| Method | Route | Behavior |
 | --- | --- | --- |
-| GET | `/api/auth/csrf/` | issue a CSRF token (open) |
-| POST | `/api/auth/login/` | authenticate, create session (open, CSRF-checked) |
-| POST | `/api/auth/logout/` | end session → `204` |
-| GET | `/api/auth/me/` | current identity and role |
+| GET | `/auth/csrf/` | issue the session write token |
+| POST | `/auth/login/` | rate-limited session authentication |
+| POST | `/auth/logout/` | end the authenticated session |
+| GET | `/auth/me/` | current account identity and role |
+| GET/POST | `/cases/` | accessible cases / authorized case creation |
+| GET/POST | `/cases/{case}/participants/` | list / owner-controlled membership creation |
+| GET/POST | `/cases/{case}/evidence/` | list / case-relative evidence registration |
+| GET | `/evidence/{evidence}/` | redacted locator, observations and custody |
+| GET/POST | `/evidence/{evidence}/verify/` | status / new integrity observation |
+| POST | `/evidence/{evidence}/accept-baseline/` | explicit reasoned local acceptance |
+| GET/POST | `/cases/{case}/jobs/` | list / idempotent submit or reasoned rerun |
+| GET | `/jobs/{job}/` | state, attempts and reproducibility |
+| GET | `/cases/{case}/artifacts/?q=` | database-filtered artifact page |
+| GET | `/artifacts/{artifact}/provenance/` | stored evidence/run/link/timeline/finding relationships |
+| GET/POST | `/cases/{case}/findings/` | list / draft creation |
+| GET/PATCH | `/findings/{finding}/` | detail / versioned draft-content edit only |
+| GET/POST | `/findings/{finding}/support/` | list / draft-only traceable support |
+| POST | `/findings/{finding}/transition/` | submit/start_review/approve/request_changes/withdraw/supersede |
+| GET/POST | `/cases/{case}/reports/` | list / draft snapshot; no approval side effect |
+| GET | `/cases/{case}/audit/` | case event page |
+| POST | `/cases/{case}/exports/` | capture and create package; returns status/download URL |
+| GET | `/exports/{package}/` | current authorized status |
+| GET | `/exports/{package}/download/` | current authorized private download |
 
-## Cases
+Job creation accepts `evidence`, optional `{parameters:{}}`, and for re-examination
+`prior_job`, non-empty `reason`, and unique `request_key`. Finding transitions require
+`action`, current integer `version`, and comments for review decisions/revision reasons.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/v1/cases/` | cases the caller owns or participates in |
-| POST | `/api/v1/cases/` | create a case (caller becomes `owner` participant) → `201` |
-| GET | `/api/v1/cases/{id}/` | case detail (`403` if no access) |
+Common responses: `200` success, `201` durable creation, `204` logout, `400` validation
+or unreadable source, `403` current capability/membership denied, `404` unknown resource,
+`409` stale version or integrity prerequisite. OpenAPI is at `/api/schema/` and Swagger
+UI at `/api/docs/`.
 
-## Evidence
+## Examples
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/v1/cases/{id}/evidence/` | list evidence in a case |
-| POST | `/api/v1/cases/{id}/evidence/` | register evidence → `201` + custody + audit |
-| GET | `/api/v1/evidence/{id}/` | evidence detail, hashes, custody, warnings, limitations |
-| GET / POST | `/api/v1/evidence/{id}/verify/` | view or perform SHA-256 verification |
+All IDs below are illustrative. A browser session must send its `sessionid` cookie and
+the current CSRF token on writes.
 
-## Processing & investigation
+```http
+GET /api/v1/cases/CASE-ID/evidence/?limit=50&offset=0
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET / POST | `/api/v1/cases/{id}/jobs/` | list / submit a processing job; requires verified evidence |
-| GET | `/api/v1/jobs/{id}/` | processing job detail with runs |
-| GET | `/api/v1/cases/{id}/artifacts/?q=` | list artifacts; `q` is a substring filter |
-| GET | `/api/v1/artifacts/{id}/` | artifact detail |
-| GET | `/api/v1/artifacts/{id}/provenance/` | artifact → run → evidence → timeline/finding chain |
-| GET | `/api/v1/cases/{id}/timeline/` | chronological events with type/date filters |
-| GET | `/api/v1/cases/{id}/provenance/` | list provenance links |
-| GET / POST | `/api/v1/cases/{id}/findings/` | list / create a finding → `201` |
-| GET / PATCH | `/api/v1/findings/{id}/` | finding detail/update |
-| GET / POST | `/api/v1/findings/{id}/support/` | list / attach one artifact or timeline event |
+200 OK
+{"count":3,"limit":50,"offset":0,"results":[{"id":"EVIDENCE-ID","source_locator":"synthetic-evidence.txt","verification_status":"verified"}]}
+```
 
-## Reporting
+```http
+POST /api/v1/cases/CASE-ID/jobs/
+Content-Type: application/json
+X-CSRFToken: TOKEN
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET / POST | `/api/v1/cases/{id}/reports/` | list / generate a report draft from findings + provenance → `201` |
-| GET | `/api/v1/reports/{id}/` | report detail / preview snapshot |
-| GET | `/api/v1/cases/{id}/audit/` | case audit events |
-| GET | `/api/v1/audit/` | caller's global login/logout events |
-| POST | `/api/v1/cases/{id}/exports/` | request a controlled export → `202` placeholder receipt, no file |
+{"evidence":"EVIDENCE-ID"}
 
-## Status codes
+201 Created
+{"id":"JOB-ID","status":"succeeded","fingerprint":"SHA256-HEX","publication_status":"published"}
+```
 
-`200` ok · `201` created · `202` accepted (export placeholder) · `204` no content
-(logout) · `400` validation or unreadable evidence · `403` case access denied · `404` unknown
-resource · `409` integrity prerequisite not met.
+A deliberate re-examination is distinct from redelivery:
 
-All implemented detail routes use explicit `404` handling. Raw evidence content is not
-returned by any endpoint.
+```json
+{
+  "evidence": "EVIDENCE-ID",
+  "prior_job": "PRIOR-JOB-ID",
+  "reason": "Parser version validation",
+  "request_key": "operator-ticket-1842",
+  "parameters": {}
+}
+```
+
+Independent review uses the current optimistic version:
+
+```http
+POST /api/v1/findings/FINDING-ID/transition/
+
+{"action":"approve","version":3,"comments":"Supporting revision and provenance independently checked."}
+```
+
+Export creation returns a status resource and a private download route. The downloaded
+ZIP can be verified without Django or network access:
+
+```powershell
+python scripts\verify_package.py prove-PACKAGE-ID.zip
+```

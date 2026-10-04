@@ -1,69 +1,23 @@
 # System architecture
 
-## Shape
+P.R.O.V.E. is a Django/DRF modular monolith with a React/TypeScript client and optional
+Tauri shell. PostgreSQL is the team system of record; SQLite is local only. Celery/Redis
+orchestrates team jobs. Evidence processing occurs in a separate bounded child, because
+Celery itself is not a hostile-input sandbox.
 
-A **modular monolith** for the case workflow, with processing pushed to a **separate
-worker** so untrusted evidence is handled at arm's length. Services are split only when
-a security boundary, scaling need, or ownership boundary justifies the cost.
+The API owns authorization and every durable business transition. Evidence storage and
+private output are disjoint. A case-relative locator is resolved only below that case's
+evidence directory. One bounded immutable byte snapshot feeds both integrity comparison
+and processing. Derived artifacts, provenance, finding revisions, audit chains and export
+snapshots live in the database or private output root.
 
-- **Web UI** — one React application, served in the browser and (optionally) inside a
-  Tauri shell. Talks to the API over REST with a session cookie.
-- **API** — Django + DRF. System of record, session authentication, case authorization,
-  and the append-only ledger. Owns all writes.
-- **Worker** — a dependency-light Python service. Hashes and inspects evidence
-  read-only, then reports runs, artifacts, and provenance back through the API.
-- **Queue** — Celery over Redis for team deployments; **eager (synchronous) mode** for
-  local development and tests, so no broker is required to exercise the full workflow.
-- **Database** — PostgreSQL for teams, SQLite for local development.
+Development is explicitly synthetic and uses eager processing. Team configuration fails
+closed when secrets, PostgreSQL, Redis, HTTPS origins, hosts or storage are invalid. See
+[architecture and controls](phase3/architecture-and-controls.md),
+[team operations](phase3/operations.md), and the
+[current diagrams](diagrams/19-phase3-trust-and-workflows.md).
 
-```mermaid
-flowchart TB
-  subgraph Client
-    UI["React + TypeScript SPA"]
-    DESK["Tauri 2 shell (optional)"]
-  end
-  subgraph API["Django + DRF"]
-    AUTH["Session auth + CSRF<br/>case-level authorization"]
-    CORE["Cases · Evidence · Processing<br/>Artifacts · Findings · Reports"]
-    LEDGER["Append-only ledger<br/>audit · custody · provenance"]
-  end
-  subgraph Processing
-    Q["Celery + Redis<br/>eager mode for local dev"]
-    W["Forensic worker<br/>SHA-256 · metadata · provenance"]
-  end
-  DB[("PostgreSQL / SQLite")]
-  EV[["Read-only evidence source"]]
-
-  DESK --> UI
-  UI -->|REST over session cookie| AUTH
-  AUTH --> CORE --> LEDGER
-  CORE -->|enqueue job| Q --> W
-  W -->|read-only hash + inspect| EV
-  W -->|artifacts + provenance| CORE
-  CORE --- DB
-  LEDGER --- DB
-```
-
-## Invariants
-
-The canonical API surface is versioned under `/api/v1/`; equivalent `/api/` paths remain
-available as compatibility aliases for the scaffold. The investigator journey is
-implemented as explicit read/detail transitions: case list, case workspace, evidence
-detail and verification, processing job, artifact detail, provenance, timeline,
-finding/support, report preview, and audit history.
-
-The browser receives structured metadata and derived artifact content only. It does not
-receive raw evidence bytes, and the worker never mutates the registered source.
-
-- The worker never writes to original evidence and never logs raw evidence contents.
-- The database is authoritative. Search — and any future index — is **derived and
-  rebuildable**, with source pointers.
-- Every write that matters produces an audit event in the same request/transaction.
-
-## Deployment
-
-Local: API + web dev server + SQLite + eager Celery. Team: API and worker under a
-process supervisor, PostgreSQL, Redis, TLS termination, secret management, and restricted
-evidence storage. See [10 deployment topology](diagrams/10-deployment-topology.md),
-[13 deployment & operations](13-deployment-and-operations.md), and the
-[ADRs](decisions/README.md).
+The API and worker do not return raw evidence bytes. A `read_only` database value records
+intent; operating-system mounts and permissions enforce host-level write protection.
+Path/stat checks reduce replacement risk but cannot prove complete protection from every
+concurrent filesystem modification.

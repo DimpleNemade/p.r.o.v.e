@@ -12,7 +12,7 @@ Terms are used consistently across the code, API, and documentation.
 | **Finding** | an examiner-authored statement with explicit supporting sources and a review state |
 | **Finding support** | a link from a finding to an artifact or timeline event that backs it |
 | **Report draft** | a snapshot assembled from a case's findings and provenance; not a signed report |
-| **Export package** | the intended reproducibility bundle (identifiers, hashes, versions, sources, limitations); a placeholder in V0.1 |
+| **Export package** | a deterministic, allowlisted case snapshot with audit cutoff, manifest, guide and offline verification; original evidence excluded |
 | **Observed evidence** | a directly recorded source fact — not an examiner conclusion |
 | **Normalized interpretation** | a structured representation produced by a processor |
 | **Machine-generated suggestion** | a future, labelled output that requires examiner review; not produced by V0.1 |

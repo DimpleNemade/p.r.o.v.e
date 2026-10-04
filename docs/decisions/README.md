@@ -16,3 +16,8 @@ supersedes the old one.
 | [008](008-v01-exclusions.md) | Exclude high-risk capabilities from V0.1 | accepted |
 | [009](009-provenance-first.md) | Provenance as a first-class data model | accepted |
 | [010](010-core-investigator-workflow.md) | Explicit, versioned investigator workflow | accepted |
+| [011](011-case-evidence-storage.md) | Case-relative evidence storage boundary | accepted |
+| [012](012-accepted-processing-baseline.md) | Explicit accepted processing baseline | accepted |
+| [013](013-idempotent-processing.md) | Database-backed processing identity | accepted |
+| [014](014-revision-review.md) | Immutable revisions and independent review | accepted |
+| [015](015-audit-and-export.md) | Canonical audit and deterministic handoff | accepted |

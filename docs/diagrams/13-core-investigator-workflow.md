@@ -9,5 +9,5 @@ flowchart TD
   A --> PR["Provenance chain"] --> T["Timeline"]
   T --> F["Finding detail"] --> S["Attach artifact or timeline support"]
   S --> R["Report preview"] --> H["Audit history"]
-  H --> X["Controlled export placeholder"]
+  H --> X["Controlled snapshot and verified package"]
 ```

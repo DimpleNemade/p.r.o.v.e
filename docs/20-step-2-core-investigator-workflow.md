@@ -8,7 +8,7 @@ Step 2 makes the core investigator journey runnable end to end on synthetic fixt
 
 The web application keeps the examiner in control. Processing produces normalized,
 clearly labelled derived records; it does not produce an autonomous conclusion. Reports
-are development drafts and the export endpoint remains a placeholder.
+are development drafts. Phase 3 subsequently added controlled package export; see the dated Phase 3 report.
 
 ## API contract
 
@@ -37,7 +37,8 @@ against the registered source reference. Only `verified` evidence can be submitt
 
 ## Seeded journey
 
-`seed_demo` is safe to run repeatedly and creates `DEMO-0001` with three synthetic
+The historical Step 2 seed created `DEMO-0001`. Phase 3 replaces it with a create-once
+`DEMO-PHASE3-0001` fixture; repeated setup preserves existing records and passwords. It has three synthetic
 evidence files, three verified hashes, three processing runs, three artifacts, timeline
 events, provenance links, one draft finding with support, one report draft, and audit
 history. The fixture labels, warnings, and limitations are intentionally visible in the

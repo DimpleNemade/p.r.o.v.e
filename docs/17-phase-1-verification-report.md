@@ -10,7 +10,7 @@ Phase 1 partially completed. The browser/API/worker workflow is verified locally
 - Workspace: the project repository root
 - Repository state at the time: not yet a Git checkout; no reset, checkout, deletion, or unrelated cleanup was performed.
 - Initial assessment: the scaffold contains Django/DRF apps for identity, cases, evidence, processing, investigations, reporting, and audit; a React/Vite browser app; a Tauri shell; a synthetic worker; Docker Compose; 12 Mermaid documents; and an existing test/documentation set.
-- Initial defect: root-level `python apps/api/manage.py test` collected zero tests because Django used the workspace root as its discovery root. The command now explicitly targets the `cases` app when no test label is supplied and discovers five tests.
+- Initial defect: root-level `python apps/api/manage.py test` collected zero tests because Django used the workspace root as its discovery root. A stopgap injected the `cases` label; this was later replaced (see below) with `manage.py` changing to its own directory so discovery is complete regardless of the invocation path.
 
 ## Environment summary
 

@@ -7,10 +7,10 @@
 *From acquired evidence to a defensible finding — without ever losing the thread back to the source.*
 
 [![CI](https://github.com/DimpleNemade/p.r.o.v.e/actions/workflows/ci.yml/badge.svg)](https://github.com/DimpleNemade/p.r.o.v.e/actions/workflows/ci.yml)
-![status](https://img.shields.io/badge/status-V0.1%20core%20workflow-orange)
+![status](https://img.shields.io/badge/status-Phase%203%20team%20verification%20pending-orange)
 ![python](https://img.shields.io/badge/python-3.12%2B-3776AB)
 ![node](https://img.shields.io/badge/node-20%2B-3C873A)
-![api](https://img.shields.io/badge/API-Django%205.1%20%2B%20DRF-092E20)
+![api](https://img.shields.io/badge/API-Django%205.2%20LTS%20%2B%20DRF-092E20)
 ![web](https://img.shields.io/badge/web-React%2018%20%2B%20Vite-61DAFB)
 ![license](https://img.shields.io/badge/license-All%20rights%20reserved-lightgrey)
 
@@ -39,7 +39,7 @@ P.R.O.V.E is the workspace I wanted then: put provenance first, make traceabilit
 
 ## What P.R.O.V.E does
 
-One connected workspace for the core investigation loop, with an append-only audit trail underneath it. The name is the pipeline:
+One connected workspace for the core investigation loop, with a canonical tamper-evident audit chain underneath it. The name is the pipeline:
 
 | | Stage | In the platform |
 |---|---|---|
@@ -49,7 +49,7 @@ One connected workspace for the core investigation loop, with an append-only aud
 | **V** | **Verify** | integrity checking at registration and on demand; a hash mismatch is **blocking and visible**, never silent |
 | **E** | **Examine** | examiner findings with review states, supporting-evidence links, report drafts, and a controlled export package |
 
-Everything an examiner does — register, verify, process, conclude, export — is written to an audit trail that the application never lets you quietly rewrite.
+Material case actions — register, observe, accept a baseline, process, review and export — are written to a versioned audit chain. This detects accidental or unauthorized changes under its documented trust assumptions; it does not claim absolute immutability.
 
 ## Who it's for
 
@@ -205,21 +205,22 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` and sign in with the development demo account:
+Open `http://localhost:5173` and sign in with either development demo account:
 
 ```
-admin@example.test  /  ChangeMe-V0.1-only
+investigator@example.test  /  ChangeMe-Phase3-only
+reviewer@example.test      /  ChangeMe-Phase3-only
 ```
 
 ### 4. Walk the workflow
 
-The seed created a synthetic case, **`DEMO-0001`**, with three synthetic evidence files and three derived artifacts. From the workspace:
+The seed created a synthetic case, **`DEMO-PHASE3-0001`**, with three synthetic evidence files and three derived artifacts. Re-running it preserves every existing record and password. From the workspace:
 
-1. Open `DEMO-0001` and inspect an evidence item, then **Verify** its SHA-256.
+1. Open `DEMO-PHASE3-0001` and inspect an evidence item, then **Verify** its SHA-256. A source without an operator reference requires a separately reasoned local-baseline acceptance.
 2. **Process** verified evidence — normalized artifacts, timeline events, and provenance links appear.
-3. Open an artifact detail and follow its **Provenance chain** back to source evidence.
-4. Add a **draft finding**, attach artifact or timeline support, and generate a **report preview**.
-5. Check **Audit history** — login, verification, processing, finding, support, and report actions are visible.
+3. Open an artifact detail and follow its stored provenance records back to source evidence.
+4. Add a **draft finding**, attach support, and submit an immutable revision. Sign in as the separate reviewer to approve or request changes.
+5. Generate a report snapshot, create a controlled package, download it, and run `python scripts/verify_package.py package.zip` offline.
 
 To see failure handling, the backend tests cover it directly: a deliberately wrong `expected_hash` makes verification report `mismatch`, and the processing job then fails and is recorded in both the custody and audit trails (`apps/api/cases/tests.py`).
 
@@ -227,16 +228,16 @@ To see failure handling, the backend tests cover it directly: a deliberately wro
 
 ```bash
 # Backend API + provenance + audit tests (from repo root)
-python apps/api/manage.py test
+cd apps/api && ../../.venv/Scripts/python.exe manage.py test --settings=config.test_settings --noinput
 
 # Worker tests
-python -m pytest services/forensic-worker/tests
+python -m pytest services/forensic-worker/tests -q
 
 # Frontend
 cd apps/web && npm test
 
 # Mermaid diagram sources
-python scripts/validate_mermaid.py
+python scripts/validate_mermaid.py  # source check + real parse/render
 ```
 
 Windows users have two convenience wrappers: `scripts/check_environment.ps1` (toolchain report) and `scripts/run_backend_tests.ps1` (API then worker tests).
@@ -285,13 +286,13 @@ The long-term intent is to wrap trusted open engines behind stable contracts tha
 
 | Layer | Choice |
 |---|---|
-| API | Python 3.12, Django 5.1, Django REST Framework, drf-spectacular |
+| API | Python 3.12, Django 5.2 LTS, Django REST Framework 3.16, drf-spectacular |
 | Auth | Django sessions, CSRF, case-level permissions, custom user model with roles |
 | Data | PostgreSQL (team) / SQLite (local dev) |
 | Processing | Separate Python worker, Celery + Redis, synchronous mode for local dev |
 | Web | React 18, TypeScript, Vite, custom CSS; Vitest + Testing Library + Playwright |
 | Desktop | Tauri 2 shell (optional) |
-| Docs | Engineering documents, ADRs, 18 Mermaid diagrams with a validator |
+| Docs | Engineering documents, ADRs, Mermaid sources with parsed SVG/PNG validation |
 
 Architecture rationale is recorded as ADRs in [`docs/decisions/`](docs/decisions/README.md).
 

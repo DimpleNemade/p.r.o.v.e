@@ -1,36 +1,18 @@
 # Security threat model
 
-A working model for V0.1 — not a completed assurance artefact. The platform processes
-**untrusted content** (evidence) and holds **highly sensitive case data**; both shape
-the design.
+| Threat | Implemented control | Residual assumption |
+| --- | --- | --- |
+| Cross-case disclosure/write | account-and-membership policy, scoped querysets, FK and nested-boundary validation | trusted DB schema and correctly assigned memberships |
+| Arbitrary server-file read | case-relative root, fail-closed path forms, symlink/reparse/special-file rejection | approved root and host permissions are configured correctly |
+| Concurrent evidence change | one bounded open handle, immutable bytes, identity/size/time comparisons | complete race elimination needs filesystem snapshots/immutable storage |
+| Blank hash presented as authentic | pending state plus separate reasoned acceptance | operator reference provenance remains a human responsibility |
+| Duplicate/partial processing | constrained request identity, atomic claim/output commit, preserved attempts | PostgreSQL/real broker gate must pass before team readiness |
+| Malicious processor input | no-network restricted child and resource limits, fail-closed team mode | Linux namespace policy and adapter dependencies form trusted computing base |
+| Self-approval/stale review | author separation, frozen snapshots, optimistic version check | account identities and role assignment are trusted |
+| History modification/tail deletion | canonical chain, record binding, external checkpoint verification | DB administrator can rewrite local history; external checkpoint retention required |
+| Malformed export | no extraction, strict allowlist/schema/reference/hash/size/path/duplicate checks | unsigned package does not authenticate author |
+| Credential guessing/log leakage | bounded cache limiter, credential-free failure logs | reverse proxy and centralized monitoring should add deployment limits |
 
-## Trust boundaries
-
-Browser · API · database · queue · worker · evidence storage.
-
-## Threats and mitigations
-
-| Threat | Mitigation in V0.1 |
-| --- | --- |
-| Unauthorized case access | `IsAuthenticated` on every route + `has_case_access` role/participant check |
-| Arbitrary path exposure / traversal via `original_path` | intended `EVIDENCE_ROOT` boundary; read-only access; no raw content in responses |
-| Silent hash mismatch | mismatch and unreadable states are blocking and written to custody + audit |
-| Sensitive data in logs | worker and API never log raw evidence contents |
-| Session replay / CSRF | `HttpOnly`/`SameSite` cookies, `Secure` in production, explicit CSRF check on login and mutations |
-| Cross-origin abuse | explicit CORS + CSRF trusted-origin allowlists |
-| Tampering with history | no update/delete routes for `AuditEvent`, `CustodyEvent`, `ProvenanceLink` |
-| Worker failure masquerading as "no evidence" | job/run `failed` states with recorded `error` |
-| Malicious evidence (parser exploitation, resource exhaustion) | processing isolated in a separate worker; **sandboxing, no-network, and resource limits are not yet implemented** |
-
-## Residual risks (must be owned by the deployment)
-
-- Deployment secret management and the production `SECRET_KEY`.
-- OS-level permissions on evidence storage and `EVIDENCE_ROOT` enforcement.
-- Backup/restore policy and tested recovery.
-- Dependency supply chain — run `pip`/`npm` audits and pin before deployment.
-- Worker isolation hardening (container, dropped capabilities, no egress).
-- Full production hardening (`manage.py check --deploy`, HTTPS/HSTS).
-
-Related: [07 Authentication & authorization](07-authentication-and-authorization.md) ·
-[11 Data protection & privacy](11-data-protection-and-privacy.md) ·
-[13 Deployment & operations](13-deployment-and-operations.md).
+See the maintained [risk register](phase3/risk-register.md). P.R.O.V.E. does not claim
+forensic parser validation, legal admissibility, compliance certification or production
+readiness.
