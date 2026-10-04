@@ -16,3 +16,6 @@ coverage/
 .ruff_cache/
 .pytest-local-worker*/
 .mypy_cache/
+.phase3/
+.test-runs/
+var/
