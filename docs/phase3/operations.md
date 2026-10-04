@@ -32,6 +32,27 @@ container paths `/var/lib/prove/evidence` and `/var/lib/prove/output`. The team 
 keeps PostgreSQL/Redis on an internal network, mounts evidence read-only, drops worker
 capabilities and provides bounded private output.
 
+**Host prerequisite for the processing sandbox.** `processing/boundary.py` runs the
+metadata child under Linux `bwrap`. On Ubuntu 23.10+ hosts, unprivileged user namespaces
+are restricted by AppArmor by default; bwrap still creates the namespace but then fails
+to bring up loopback inside it (`Failed RTM_NEWADDR: Operation not permitted`), which
+aborts the sandboxed child before it runs at all — this is exactly what CI's
+`integration.yml` hit and works around with
+`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. A bare-metal or VM team
+host on such a distribution needs the same adjustment, or an AppArmor profile that
+permits bwrap's namespace use, before processing will succeed.
+
+**Unverified: bwrap inside the `worker` container as currently configured.** CI validates
+bwrap running directly on the runner, not inside a container. The `worker` service in
+`docker-compose.team.yml` sets `cap_drop: [ALL]`, `security_opt:
+["no-new-privileges:true"]` and `read_only: true` — hardening that is independently
+sound, but `no-new-privileges` in particular is known to conflict with the
+privilege-within-namespace mechanism bubblewrap relies on, and the default Docker seccomp
+profile restricts some of the namespace/mount syscalls bwrap needs. Whether processing
+actually succeeds inside this container has not been exercised (no Docker was available
+in either the original Phase 3 build or in CI as currently configured) — track and verify
+before relying on the team Compose topology for real processing.
+
 ```powershell
 docker compose -f infra\compose\docker-compose.team.yml build
 docker compose -f infra\compose\docker-compose.team.yml run --rm api python manage.py check --deploy
