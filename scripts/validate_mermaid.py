@@ -1,14 +1,16 @@
-"""Validate Mermaid blocks embedded in the project's Markdown.
+"""Validate and render Mermaid blocks embedded in the project's Markdown.
 
 Checks, for every ``docs/**/*.md`` file:
   * code fences are balanced (no unclosed ```mermaid block);
   * each Mermaid block starts with a supported diagram header.
 
-Exits non-zero on any problem. No third-party dependencies.
+Then delegates real parsing/rendering to Mermaid CLI through the repository Node install.
 """
 
 from pathlib import Path
 import re
+import subprocess
+import sys
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 SUPPORTED = ("flowchart", "sequenceDiagram", "stateDiagram-v2", "gantt", "graph", "erDiagram")
@@ -43,4 +45,8 @@ if errors:
     print("\n".join(errors))
     raise SystemExit(1)
 
-print(f"Validated Mermaid in {len(files)} Markdown files.")
+changed = DOCS / "diagrams" / "19-phase3-trust-and-workflows.md"
+subprocess.run(
+    ["node", str(Path(__file__).with_name("render_mermaid.mjs")), str(changed)], check=True
+)
+print(f"Source-checked Mermaid in {len(files)} Markdown files; rendered changed diagrams.")
