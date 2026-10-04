@@ -1,4 +1,18 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  Actions,
+  useAction,
+  BaselineAcceptance,
+  ReviewActions,
+  ExportControl,
+} from "./Controls";
+import {
+  FormEvent,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from "react";
 import {
   Link,
   Route,
@@ -20,7 +34,9 @@ import {
 
 const statusLabels: Record<string, string> = {
   unverified: "Unverified",
-  verified: "Verified",
+  verified: "Reference matched",
+  baseline_pending: "Baseline acceptance required",
+  baseline_accepted: "Local baseline matched",
   mismatch: "Hash mismatch",
   unreadable: "Unreadable",
   not_started: "Not started",
@@ -32,8 +48,8 @@ const statusLabels: Record<string, string> = {
 const stateClass = (value: string) => value.replaceAll("_", "-");
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
-  const [username, setUsername] = useState("admin@example.test");
-  const [password, setPassword] = useState("ChangeMe-V0.1-only");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -78,7 +94,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
           <button type="submit">Sign in</button>
         </form>
         <small>
-          Development demo credentials are prefilled. Synthetic data only.
+          Enter your assigned credentials. Synthetic data only in development.
         </small>
       </div>
     </main>
@@ -281,9 +297,10 @@ function CaseWorkspacePage({
   const [loading, setLoading] = useState(true);
   const section =
     location.pathname.split("/").filter(Boolean).pop() || "overview";
+  const generation = useRef(0);
   const load = async () => {
     if (!caseId) return;
-    setLoading(true);
+    const current = ++generation.current;
     try {
       const [c, e, a, t, f, r, h, globalHistory] = await Promise.all([
         api.caseDetail(caseId),
@@ -295,6 +312,7 @@ function CaseWorkspacePage({
         api.audit(caseId),
         api.globalAudit(),
       ]);
+      if (current !== generation.current) return;
       setCaseRecord(c);
       setEvidence(e);
       setArtifacts(a);
@@ -310,8 +328,11 @@ function CaseWorkspacePage({
   };
   useEffect(() => {
     load();
+    return () => {
+      generation.current += 1;
+    };
   }, [caseId]);
-  if (loading)
+  if (loading || (caseRecord && caseRecord.id !== caseId))
     return (
       <div className="shell">
         <Header user={user} onLogout={onLogout} />
@@ -383,56 +404,58 @@ function CaseWorkspacePage({
           </div>
         </aside>
         <main className="content workspace-content">
-          {section === "overview" && (
-            <Overview
-              caseRecord={caseRecord}
-              evidence={evidence}
-              artifacts={artifacts}
-              findings={findings}
-              timeline={timeline}
-            />
-          )}
-          {section === "evidence" && (
-            <EvidenceView
-              caseId={caseRecord.id}
-              evidence={evidence}
-              onRefresh={load}
-              onError={setError}
-            />
-          )}
-          {section === "artifacts" && (
-            <ArtifactView
-              caseId={caseRecord.id}
-              artifacts={artifacts}
-              onError={setError}
-            />
-          )}
-          {section === "timeline" && (
-            <TimelineView
-              caseId={caseRecord.id}
-              initial={timeline}
-              onError={setError}
-            />
-          )}
-          {section === "findings" && (
-            <FindingsView
-              caseId={caseRecord.id}
-              findings={findings}
-              artifacts={artifacts}
-              timeline={timeline}
-              onRefresh={load}
-              onError={setError}
-            />
-          )}
-          {section === "report" && (
-            <ReportView
-              caseId={caseRecord.id}
-              reports={reports}
-              onRefresh={load}
-              onError={setError}
-            />
-          )}
-          {section === "audit" && <AuditView events={audit} />}
+          <Actions.Provider value={caseRecord.actions}>
+            {section === "overview" && (
+              <Overview
+                caseRecord={caseRecord}
+                evidence={evidence}
+                artifacts={artifacts}
+                findings={findings}
+                timeline={timeline}
+              />
+            )}
+            {section === "evidence" && (
+              <EvidenceView
+                caseId={caseRecord.id}
+                evidence={evidence}
+                onRefresh={load}
+                onError={setError}
+              />
+            )}
+            {section === "artifacts" && (
+              <ArtifactView
+                caseId={caseRecord.id}
+                artifacts={artifacts}
+                onError={setError}
+              />
+            )}
+            {section === "timeline" && (
+              <TimelineView
+                caseId={caseRecord.id}
+                initial={timeline}
+                onError={setError}
+              />
+            )}
+            {section === "findings" && (
+              <FindingsView
+                caseId={caseRecord.id}
+                findings={findings}
+                artifacts={artifacts}
+                timeline={timeline}
+                onRefresh={load}
+                onError={setError}
+              />
+            )}
+            {section === "report" && (
+              <ReportView
+                caseId={caseRecord.id}
+                reports={reports}
+                onRefresh={load}
+                onError={setError}
+              />
+            )}
+            {section === "audit" && <AuditView events={audit} />}
+          </Actions.Provider>
         </main>
       </div>
     </div>
@@ -543,10 +566,14 @@ function EvidenceView({
   onRefresh: () => Promise<void>;
   onError: (message: string) => void;
 }) {
+  const canEvidence = useAction("evidence");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Evidence | null>(null);
   const [form, setForm] = useState({ display_name: "", original_path: "" });
   const [saving, setSaving] = useState(false);
+  const [evidenceAction, setEvidenceAction] = useState<
+    "verify" | "process" | null
+  >(null);
   async function open(id: string) {
     try {
       setDetail(await api.evidenceDetail(id));
@@ -574,21 +601,27 @@ function EvidenceView({
     }
   }
   async function verify(id: string) {
+    setEvidenceAction("verify");
     try {
       await api.verify(id);
       await onRefresh();
       await open(id);
     } catch (err) {
       onError((err as Error).message);
+    } finally {
+      setEvidenceAction(null);
     }
   }
   async function process(id: string) {
+    setEvidenceAction("process");
     try {
       await api.submitJob(caseId, id);
       await onRefresh();
       await open(id);
     } catch (err) {
       onError((err as Error).message);
+    } finally {
+      setEvidenceAction(null);
     }
   }
   return (
@@ -596,13 +629,13 @@ function EvidenceView({
       <PageHeading
         eyebrow="EVIDENCE REGISTER"
         title="Registered evidence"
-        description="Integrity and processing state are shown separately. Original evidence is never uploaded or modified."
+        description="Integrity and processing state are shown separately. Sources are opened read-only through approved case storage."
       />
       <div className="notice warning">
         <strong>Hash mismatch blocks processing</strong>
         <span>
-          Only verified evidence can enter the processing queue. Unreadable
-          sources remain visible as failures.
+          A matched reference or explicitly accepted local baseline is required.
+          Unreadable sources remain visible as failures.
         </span>
       </div>
       <div className="evidence-layout">
@@ -627,7 +660,7 @@ function EvidenceView({
                 <small>
                   {item.evidence_type} · {item.synthetic_label}
                 </small>
-                <small>{item.original_path}</small>
+                <small>{item.source_locator}</small>
               </button>
               <span className={`badge ${stateClass(item.verification_status)}`}>
                 {statusLabels[item.verification_status]}
@@ -645,11 +678,22 @@ function EvidenceView({
           ))}
         </section>
         {detail ? (
-          <EvidenceDetailPanel
-            detail={detail}
-            onVerify={verify}
-            onProcess={process}
-          />
+          <div>
+            <EvidenceDetailPanel
+              detail={detail}
+              onVerify={verify}
+              onProcess={process}
+              evidenceAction={evidenceAction}
+            />
+            <BaselineAcceptance
+              evidence={detail}
+              onDone={async () => {
+                await onRefresh();
+                await open(detail.id);
+              }}
+              onError={onError}
+            />
+          </div>
         ) : (
           <form className="panel create-card" onSubmit={register}>
             <h2>Register synthetic evidence</h2>
@@ -667,7 +711,7 @@ function EvidenceView({
               />
             </label>
             <label>
-              Original path or logical source
+              Case-relative source locator
               <input
                 required
                 value={form.original_path}
@@ -676,7 +720,7 @@ function EvidenceView({
                 }
               />
             </label>
-            <button disabled={saving}>
+            <button disabled={saving || !canEvidence}>
               {saving ? "Registering…" : "Register evidence"}
             </button>
           </form>
@@ -689,12 +733,18 @@ function EvidenceDetailPanel({
   detail,
   onVerify,
   onProcess,
+  evidenceAction,
 }: {
   detail: Evidence;
-  onVerify: (id: string) => void;
-  onProcess: (id: string) => void;
+  onVerify: (id: string) => Promise<void>;
+  onProcess: (id: string) => Promise<void>;
+  evidenceAction: "verify" | "process" | null;
 }) {
-  const blocked = detail.verification_status !== "verified";
+  const canEvidence = useAction("evidence"),
+    canProcess = useAction("process");
+  const blocked =
+    !["verified", "baseline_accepted"].includes(detail.verification_status) ||
+    !detail.baseline_hash;
   return (
     <section className="panel detail-panel">
       <div className="panel-head">
@@ -710,7 +760,7 @@ function EvidenceDetailPanel({
         <dt>Type</dt>
         <dd>{detail.evidence_type}</dd>
         <dt>Source reference</dt>
-        <dd>{detail.original_path}</dd>
+        <dd>{detail.source_locator}</dd>
         <dt>Registered</dt>
         <dd>
           {new Date(detail.registered_at).toLocaleString()} by{" "}
@@ -722,8 +772,12 @@ function EvidenceDetailPanel({
         <dd className="mono">{detail.expected_hash || "Not supplied"}</dd>
         <dt>Calculated hash</dt>
         <dd className="mono">{detail.calculated_hash || "Not calculated"}</dd>
-        <dt>Read-only</dt>
-        <dd>{detail.read_only ? "Yes" : "No"}</dd>
+        <dt>Read-only intent</dt>
+        <dd>Application read-only access; not an OS write blocker.</dd>
+        <dt>Accepted baseline</dt>
+        <dd className="mono">{detail.baseline_hash || "Not accepted"}</dd>
+        <dt>Baseline origin</dt>
+        <dd>{detail.baseline_origin || "None"}</dd>
         <dt>Processing</dt>
         <dd>
           <span className={`badge ${stateClass(detail.processing_status)}`}>
@@ -752,12 +806,16 @@ function EvidenceDetailPanel({
         </div>
       )}
       <div className="button-row">
-        <button className="secondary" onClick={() => onVerify(detail.id)}>
+        <button
+          className="secondary"
+          disabled={!canEvidence || evidenceAction !== null}
+          onClick={() => onVerify(detail.id)}
+        >
           Verify integrity
         </button>
         <button
           onClick={() => onProcess(detail.id)}
-          disabled={blocked}
+          disabled={blocked || !canProcess || evidenceAction !== null}
           title={
             blocked
               ? "Verify integrity successfully before processing"
@@ -917,17 +975,26 @@ function ArtifactDetailPanel({
       </dl>
       <h3>Provenance chain</h3>
       <div className="provenance-chain">
-        <span>Examiner finding</span>
-        <b>↓</b>
-        <span>Timeline event</span>
-        <b>↓</b>
-        <span>Artifact</span>
-        <b>↓</b>
-        <span>Processing run</span>
-        <b>↓</b>
-        <span>Original evidence</span>
-        <b>↓</b>
-        <span>Hash and custody</span>
+        <span>
+          {chain?.related_findings?.length
+            ? `${chain.related_findings.length} linked findings`
+            : "No finding linked"}
+        </span>
+        <span>
+          {chain?.timeline_events?.length
+            ? `${chain.timeline_events.length} timeline records`
+            : "No timeline link"}
+        </span>
+        <span>
+          {chain?.provenance_links?.length
+            ? `${chain.provenance_links.length} stored derivation links`
+            : "Missing derivation link"}
+        </span>
+        <span>Run: {chain?.processing_run?.status || "Missing run"}</span>
+        <span>
+          Evidence:{" "}
+          {chain?.original_evidence?.source_locator || "Missing evidence"}
+        </span>
       </div>
       {chain?.timeline_events?.map((event: TimelineEvent) => (
         <div className="mini-record" key={event.id}>
@@ -1032,7 +1099,11 @@ function TimelineView({
         )}
         {events.map((event) => (
           <div className="timeline-row" key={event.id}>
-            <time>{new Date(event.observed_at).toLocaleString()}</time>
+            <time>
+              {event.observed_at
+                ? new Date(event.observed_at).toLocaleString()
+                : "Source time unknown"}
+            </time>
             <div>
               <strong>{event.event_type}</strong>
               <p>{event.summary}</p>
@@ -1063,11 +1134,17 @@ function FindingsView({
   onRefresh: () => Promise<void>;
   onError: (message: string) => void;
 }) {
+  const canFinding = useAction("finding");
   const [text, setText] = useState("");
   const [basis, setBasis] = useState("observed");
   const [selected, setSelected] = useState<Finding | null>(null);
   const [supportType, setSupportType] = useState("artifact");
   const [supportId, setSupportId] = useState("");
+  useEffect(() => {
+    setSelected((current) =>
+      current ? findings.find((item) => item.id === current.id) || null : null,
+    );
+  }, [findings]);
   async function create(event: FormEvent) {
     event.preventDefault();
     if (!text.trim()) return;
@@ -1133,7 +1210,7 @@ function FindingsView({
                 <option value="interpreted">Normalized interpretation</option>
               </select>
             </label>
-            <button>Create draft finding</button>
+            <button disabled={!canFinding}>Create draft finding</button>
           </form>
           <div className="finding-list">
             {!findings.length && (
@@ -1174,6 +1251,11 @@ function FindingsView({
               </div>
             )}
             <p>{selected.finding_text}</p>
+            <ReviewActions
+              finding={selected}
+              onDone={onRefresh}
+              onError={onError}
+            />
             <form className="inline-form" onSubmit={attach}>
               <select
                 aria-label="Support type"
@@ -1206,7 +1288,15 @@ function FindingsView({
                       </option>
                     ))}
               </select>
-              <button disabled={!supportId}>Attach support</button>
+              <button
+                disabled={
+                  !supportId ||
+                  !canFinding ||
+                  selected.examiner_status !== "draft"
+                }
+              >
+                Attach support
+              </button>
             </form>
             {selected.supports?.map((support) => (
               <div className="mini-record" key={support.id}>
@@ -1241,6 +1331,7 @@ function ReportView({
   onRefresh: () => void;
   onError: (message: string) => void;
 }) {
+  const canReport = useAction("report");
   const [report, setReport] = useState<Report | null>(reports[0] || null);
   async function generate() {
     try {
@@ -1260,6 +1351,11 @@ function ReportView({
   const body = report?.body;
   return (
     <>
+      <ExportControl
+        caseId={caseId}
+        reportId={reports[0]?.id}
+        onError={onError}
+      />
       <PageHeading
         eyebrow="REPORT PREVIEW"
         title="Development report draft"
@@ -1269,7 +1365,9 @@ function ReportView({
         <span className="badge draft">
           {report ? "Draft" : "Not generated"}
         </span>
-        <button onClick={generate}>Generate report preview</button>
+        <button disabled={!canReport} onClick={generate}>
+          Generate report preview
+        </button>
       </div>
       {!report ? (
         <div className="panel empty-panel">

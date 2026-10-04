@@ -3,16 +3,18 @@ from datetime import datetime
 from pathlib import Path
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from audit.models import AuditEvent
 from evidence.models import CustodyEvent, EvidenceHash, EvidenceItem
-from evidence.services import verify_evidence
+from evidence.services import observe, accept_baseline
 from investigations.models import (
     Artifact,
     Bookmark,
@@ -27,7 +29,7 @@ from processing.tasks import process_evidence_job
 from reporting.models import ExportPackage, Report
 
 from .models import Case, CaseParticipant
-from .permissions import has_case_access
+from .permissions import has_case_access, allowed
 from .serializers import (
     ArtifactDetailSerializer,
     ArtifactSerializer,
@@ -37,6 +39,7 @@ from .serializers import (
     CustodySerializer,
     EvidenceDetailSerializer,
     EvidenceSerializer,
+    ExportSerializer,
     FindingDetailSerializer,
     FindingSerializer,
     FindingSupportSerializer,
@@ -53,37 +56,59 @@ def deny(message="Case access denied.", code="permission_denied"):
     return Response({"detail": message, "code": code}, status=status.HTTP_403_FORBIDDEN)
 
 
-def case_for(request, case_id, write=False):
+def case_for(request, case_id, write=False, action=None):
     case = get_object_or_404(Case, pk=case_id)
-    return case if has_case_access(request.user, case, write) else None
+    return case if allowed(request.user, case, action or ("finding" if write else "read")) else None
 
 
 def audit(request, case, action, object_type="", object_id="", metadata=None):
-    safe_metadata = metadata or {}
-    return AuditEvent.objects.create(
-        case=case,
-        actor=request.user,
-        action=action,
-        object_type=object_type,
-        object_id=str(object_id),
-        metadata=safe_metadata,
-    )
+    from audit.services import append_event
+
+    return append_event(case, request.user, action, object_type, object_id, metadata)
 
 
 def json_ready(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def page_response(request, queryset, serializer, ordering=("created_at", "id")):
+    """Bounded, stable offset page used by every collection endpoint."""
+    try:
+        limit = int(request.query_params.get("limit", 50))
+        offset = int(request.query_params.get("offset", 0))
+    except (TypeError, ValueError):
+        return Response({"detail": "limit and offset must be integers"}, status=400)
+    if limit < 1 or limit > 100 or offset < 0 or offset > 1_000_000:
+        return Response({"detail": "limit must be 1..100 and offset 0..1000000"}, status=400)
+    queryset = queryset.order_by(*ordering)
+    count = queryset.count()
+    return Response(
+        {
+            "count": count,
+            "limit": limit,
+            "offset": offset,
+            "results": serializer(queryset[offset : offset + limit], many=True).data,
+        }
+    )
+
+
+@extend_schema_view(
+    get=extend_schema(operation_id="v1_case_list"),
+    post=extend_schema(operation_id="v1_case_create"),
+)
 class CaseListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CaseSerializer
 
     def get(self, request):
         queryset = Case.objects.filter(participants__user=request.user) | Case.objects.filter(
             owner=request.user
         )
-        return Response(CaseSerializer(queryset.distinct(), many=True).data)
+        return page_response(request, queryset.distinct(), CaseSerializer, ("-created_at", "id"))
 
     def post(self, request):
+        if not allowed(request.user, action="create"):
+            return deny("Account cannot create cases.")
         serializer = CaseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
@@ -93,27 +118,47 @@ class CaseListCreate(APIView):
         return Response(CaseSerializer(case).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(get=extend_schema(operation_id="v1_case_retrieve"))
 class CaseDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CaseSerializer
 
     def get(self, request, pk):
         case = case_for(request, pk)
         if not case:
             return deny()
-        return Response(CaseSerializer(case).data)
+        return Response(
+            {
+                **CaseSerializer(case).data,
+                "actions": {
+                    action: allowed(request.user, case, action)
+                    for action in (
+                        "evidence",
+                        "process",
+                        "finding",
+                        "review",
+                        "report",
+                        "export",
+                        "participants",
+                    )
+                },
+            }
+        )
 
 
 class ParticipantList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ParticipantSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(ParticipantSerializer(case.participants.all(), many=True).data)
+        return page_response(request, case.participants.all(), ParticipantSerializer)
 
+    @transaction.atomic
     def post(self, request, case_id):
-        case = case_for(request, case_id, write=True)
+        case = case_for(request, case_id, action="participants")
         if not case:
             return deny("Case write access denied.")
         serializer = ParticipantSerializer(data={**request.data, "case": str(case.id)})
@@ -132,19 +177,22 @@ class ParticipantList(APIView):
 
 class EvidenceListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = EvidenceSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(
-            EvidenceSerializer(
-                case.evidence_items.select_related("registered_by").all(), many=True
-            ).data
+        return page_response(
+            request,
+            case.evidence_items.select_related("registered_by").all(),
+            EvidenceSerializer,
+            ("registered_at", "id"),
         )
 
+    @transaction.atomic
     def post(self, request, case_id):
-        case = case_for(request, case_id, write=True)
+        case = case_for(request, case_id, action="evidence")
         if not case:
             return deny("Case write access denied.")
         serializer = EvidenceSerializer(data={**request.data, "case": str(case.id)})
@@ -170,6 +218,7 @@ class EvidenceListCreate(APIView):
 
 class EvidenceDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = EvidenceDetailSerializer
 
     def get(self, request, evidence_id):
         evidence = get_object_or_404(
@@ -182,6 +231,7 @@ class EvidenceDetail(APIView):
 
 class EvidenceVerify(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = EvidenceDetailSerializer
 
     def get(self, request, evidence_id):
         evidence = get_object_or_404(EvidenceItem, pk=evidence_id)
@@ -200,54 +250,49 @@ class EvidenceVerify(APIView):
 
     def post(self, request, evidence_id):
         evidence = get_object_or_404(EvidenceItem, pk=evidence_id)
-        if not has_case_access(request.user, evidence.case, write=True):
-            return deny("Case write access denied.")
-        try:
-            calculated, verification_status = verify_evidence(evidence)
-        except OSError:
-            calculated, verification_status = "", "unreadable"
-        evidence.calculated_hash = calculated
-        evidence.verification_status = verification_status
-        evidence.save(update_fields=["calculated_hash", "verification_status", "updated_at"])
-        if verification_status == "unreadable":
-            action = "hash_verification_failed"
-            details = {"status": verification_status}
-            response = {"detail": "Evidence path is not readable.", "code": "evidence_unreadable"}
-            response_status = status.HTTP_400_BAD_REQUEST
-        else:
-            EvidenceHash.objects.create(evidence=evidence, algorithm="SHA-256", value=calculated)
-            action = "hash_verified" if verification_status == "verified" else "hash_mismatch"
-            details = {"status": verification_status, "algorithm": "SHA-256"}
-            response = EvidenceDetailSerializer(evidence).data
-            response_status = status.HTTP_200_OK
-        CustodyEvent.objects.create(
-            case=evidence.case,
-            evidence=evidence,
-            actor=request.user,
-            action=action,
-            details=details,
+        if not allowed(request.user, evidence.case, "evidence"):
+            return deny("Evidence verification denied.")
+        observe(evidence, request.user)
+        return Response(
+            EvidenceDetailSerializer(evidence).data,
+            status=400 if evidence.verification_status == "unreadable" else 200,
         )
-        audit(request, evidence.case, f"evidence.{action}", "EvidenceItem", evidence.id, details)
-        return Response(response, status=response_status)
+
+
+class EvidenceAcceptBaseline(APIView):
+    serializer_class = EvidenceDetailSerializer
+
+    def post(self, request, evidence_id):
+        evidence = get_object_or_404(EvidenceItem, pk=evidence_id)
+        if not allowed(request.user, evidence.case, "evidence"):
+            return deny("Evidence baseline acceptance denied.")
+        accept_baseline(evidence, request.user, request.data.get("reason"))
+        return Response(EvidenceDetailSerializer(evidence).data)
 
 
 class JobListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = JobSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(
-            JobSerializer(case.processing_jobs.prefetch_related("runs").all(), many=True).data
+        return page_response(
+            request,
+            case.processing_jobs.prefetch_related("runs").all(),
+            JobSerializer,
         )
 
     def post(self, request, case_id):
-        case = case_for(request, case_id, write=True)
+        case = case_for(request, case_id, action="process")
         if not case:
             return deny("Case write access denied.")
         evidence = get_object_or_404(EvidenceItem, pk=request.data.get("evidence"), case=case)
-        if evidence.verification_status != "verified":
+        if (
+            evidence.verification_status not in {"verified", "baseline_accepted"}
+            or not evidence.baseline_hash
+        ):
             audit(
                 request,
                 case,
@@ -263,15 +308,26 @@ class JobListCreate(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
-        job = ProcessingJob.objects.create(case=case, evidence=evidence, requested_by=request.user)
-        audit(request, case, "processing.submitted", "ProcessingJob", job.id)
-        process_evidence_job.delay(str(job.id))
+        from processing.services import submit
+
+        prior = None
+        if request.data.get("prior_job"):
+            prior = get_object_or_404(ProcessingJob, pk=request.data["prior_job"], case=case)
+        job = submit(
+            evidence,
+            request.user,
+            request.data.get("parameters"),
+            prior,
+            request.data.get("reason", ""),
+            request.data.get("request_key"),
+        )
         job.refresh_from_db()
         return Response(JobSerializer(job).data, status=status.HTTP_201_CREATED)
 
 
 class JobDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = JobSerializer
 
     def get(self, request, job_id):
         job = get_object_or_404(ProcessingJob.objects.prefetch_related("runs"), pk=job_id)
@@ -282,25 +338,26 @@ class JobDetail(APIView):
 
 class ArtifactList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ArtifactSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
         queryset = case.artifacts.all()
-        query = request.query_params.get("q", "").strip().lower()
+        query = request.query_params.get("q", "").strip()
         if query:
-            queryset = [
-                artifact
-                for artifact in queryset
-                if query
-                in f"{artifact.source_path} {artifact.artifact_type} {artifact.content}".lower()
-            ]
-        return Response(ArtifactSerializer(queryset, many=True).data)
+            queryset = queryset.filter(
+                Q(source_path__icontains=query)
+                | Q(artifact_type__icontains=query)
+                | Q(content__icontains=query)
+            )
+        return page_response(request, queryset, ArtifactSerializer)
 
 
 class ArtifactDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ArtifactDetailSerializer
 
     def get(self, request, artifact_id):
         artifact = get_object_or_404(
@@ -308,21 +365,29 @@ class ArtifactDetail(APIView):
         )
         if not has_case_access(request.user, artifact.case):
             return deny()
+        if (
+            artifact.source_evidence.case_id != artifact.case_id
+            or artifact.processing_run.case_id != artifact.case_id
+            or artifact.processing_run.job.evidence_id != artifact.source_evidence_id
+        ):
+            return deny("Broken case provenance boundary.")
         return Response(ArtifactDetailSerializer(artifact).data)
 
 
 class ProvenanceList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ProvenanceSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(ProvenanceSerializer(case.provenance_links.all(), many=True).data)
+        return page_response(request, case.provenance_links.all(), ProvenanceSerializer)
 
 
 class TimelineList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = TimelineSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
@@ -348,11 +413,14 @@ class TimelineList(APIView):
                 {"detail": "Date filters must be ISO-8601 values.", "code": "invalid_date_filter"},
                 status=400,
             )
-        return Response(TimelineSerializer(queryset, many=True).data)
+        return page_response(
+            request, queryset, TimelineSerializer, ("observed_at", "created_at", "id")
+        )
 
 
 class ArtifactProvenance(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ArtifactDetailSerializer
 
     def get(self, request, artifact_id):
         artifact = get_object_or_404(
@@ -360,7 +428,15 @@ class ArtifactProvenance(APIView):
         )
         if not has_case_access(request.user, artifact.case):
             return deny()
-        links = ProvenanceLink.objects.filter(artifact=artifact)
+        if (
+            artifact.source_evidence.case_id != artifact.case_id
+            or artifact.processing_run.case_id != artifact.case_id
+            or artifact.processing_run.job.evidence_id != artifact.source_evidence_id
+        ):
+            return deny("Broken case provenance boundary.")
+        links = ProvenanceLink.objects.filter(
+            artifact=artifact, case=artifact.case, source_evidence=artifact.source_evidence
+        )
         return Response(
             {
                 "artifact": ArtifactSerializer(artifact).data,
@@ -373,10 +449,13 @@ class ArtifactProvenance(APIView):
                 "original_evidence": EvidenceDetailSerializer(artifact.source_evidence).data,
                 "provenance_links": ProvenanceSerializer(links, many=True).data,
                 "timeline_events": TimelineSerializer(
-                    artifact.timeline_events.all(), many=True
+                    artifact.timeline_events.filter(case=artifact.case), many=True
                 ).data,
                 "related_findings": FindingSerializer(
-                    Finding.objects.filter(supports__artifact=artifact).distinct(), many=True
+                    Finding.objects.filter(
+                        supports__artifact=artifact, case=artifact.case
+                    ).distinct(),
+                    many=True,
                 ).data,
             }
         )
@@ -384,17 +463,19 @@ class ArtifactProvenance(APIView):
 
 class FindingListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = FindingDetailSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(
-            FindingDetailSerializer(
-                case.findings.prefetch_related("supports").all(), many=True
-            ).data
+        return page_response(
+            request,
+            case.findings.prefetch_related("supports").all(),
+            FindingDetailSerializer,
         )
 
+    @transaction.atomic
     def post(self, request, case_id):
         case = case_for(request, case_id, write=True)
         if not case:
@@ -415,6 +496,7 @@ class FindingListCreate(APIView):
 
 class FindingDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = FindingDetailSerializer
 
     def get(self, request, finding_id):
         finding = get_object_or_404(Finding.objects.prefetch_related("supports"), pk=finding_id)
@@ -422,59 +504,53 @@ class FindingDetail(APIView):
             return deny()
         return Response(FindingDetailSerializer(finding).data)
 
+    @transaction.atomic
     def patch(self, request, finding_id):
-        finding = get_object_or_404(Finding, pk=finding_id)
-        if not has_case_access(request.user, finding.case, write=True):
-            return deny("Case write access denied.")
+        from investigations.services import Conflict
+
+        finding = get_object_or_404(Finding.objects.select_for_update(), pk=finding_id)
+        if (
+            not allowed(request.user, finding.case, "finding")
+            or finding.author_id != request.user.pk
+        ):
+            return deny("Finding author access required.")
         serializer = FindingSerializer(finding, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        updated = serializer.save()
+        if finding.examiner_status != "draft" or request.data.get("version") != finding.version:
+            raise Conflict()
+        updated = serializer.save(version=finding.version + 1)
         audit(
             request,
             finding.case,
             "finding.updated",
             "Finding",
-            finding.id,
-            {"fields": list(request.data.keys())},
+            finding.pk,
+            {"version": updated.version},
         )
         return Response(FindingDetailSerializer(updated).data)
 
 
 class FindingSupportListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = FindingSupportSerializer
 
     def get(self, request, finding_id):
         finding = get_object_or_404(Finding, pk=finding_id)
         if not has_case_access(request.user, finding.case):
             return deny()
-        return Response(FindingSupportSerializer(finding.supports.all(), many=True).data)
+        return page_response(request, finding.supports.all(), FindingSupportSerializer)
 
+    @transaction.atomic
     def post(self, request, finding_id):
-        finding = get_object_or_404(Finding, pk=finding_id)
+        finding = get_object_or_404(Finding.objects.select_for_update(), pk=finding_id)
         if not has_case_access(request.user, finding.case, write=True):
             return deny("Case write access denied.")
         data = {**request.data, "finding": str(finding.id)}
         serializer = FindingSupportSerializer(data=data)
         serializer.is_valid(raise_exception=True)
         support = serializer.save()
-        if support.artifact_id and support.artifact.case_id != finding.case_id:
-            support.delete()
-            return Response(
-                {
-                    "detail": "Support artifact must belong to the finding case.",
-                    "code": "case_mismatch",
-                },
-                status=400,
-            )
-        if support.timeline_event_id and support.timeline_event.case_id != finding.case_id:
-            support.delete()
-            return Response(
-                {
-                    "detail": "Support timeline event must belong to the finding case.",
-                    "code": "case_mismatch",
-                },
-                status=400,
-            )
+        finding.version += 1
+        finding.save(update_fields=["version"])
         audit(
             request,
             finding.case,
@@ -491,15 +567,17 @@ class FindingSupportListCreate(APIView):
 
 class ReportListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ReportSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(ReportSerializer(case.reports.all(), many=True).data)
+        return page_response(request, case.reports.all(), ReportSerializer, ("-created_at", "id"))
 
+    @transaction.atomic
     def post(self, request, case_id):
-        case = case_for(request, case_id, write=True)
+        case = case_for(request, case_id, action="report")
         if not case:
             return deny("Case write access denied.")
         findings = list(case.findings.prefetch_related("supports").all())
@@ -520,6 +598,17 @@ class ReportListCreate(APIView):
                 "jobs": case.processing_jobs.count(),
             },
             "findings": json_ready(FindingDetailSerializer(findings, many=True).data),
+            "approvedRevisions": [
+                {
+                    "finding": str(f.pk),
+                    "revision": str(r.pk),
+                    "snapshot_hash": r.snapshot_hash,
+                    "snapshot": r.snapshot,
+                }
+                for f in findings
+                if f.examiner_status == "approved"
+                for r in f.revisions.filter(status="approved").order_by("-number")[:1]
+            ],
             "supportingArtifacts": [
                 str(support.artifact_id)
                 for finding in findings
@@ -557,6 +646,7 @@ class ReportListCreate(APIView):
 
 class ReportDetail(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ReportSerializer
 
     def get(self, request, report_id):
         report = get_object_or_404(Report, pk=report_id)
@@ -567,35 +657,42 @@ class ReportDetail(APIView):
 
 class AuditList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = AuditSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(
-            AuditSerializer(case.audit_events.select_related("actor").all(), many=True).data
+        return page_response(
+            request,
+            case.audit_events.select_related("actor").all(),
+            AuditSerializer,
+            ("-created_at", "-id"),
         )
 
 
 class GlobalAuditList(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = AuditSerializer
 
     def get(self, request):
         events = AuditEvent.objects.filter(actor=request.user, case__isnull=True).select_related(
             "actor"
         )
-        return Response(AuditSerializer(events, many=True).data)
+        return page_response(request, events, AuditSerializer, ("-created_at", "-id"))
 
 
 class BookmarkListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = BookmarkSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(BookmarkSerializer(case.bookmarks.all(), many=True).data)
+        return page_response(request, case.bookmarks.all(), BookmarkSerializer)
 
+    @transaction.atomic
     def post(self, request, case_id):
         case = case_for(request, case_id, write=True)
         if not case:
@@ -609,13 +706,15 @@ class BookmarkListCreate(APIView):
 
 class NoteListCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = NoteSerializer
 
     def get(self, request, case_id):
         case = case_for(request, case_id)
         if not case:
             return deny()
-        return Response(NoteSerializer(case.notes.all(), many=True).data)
+        return page_response(request, case.notes.all(), NoteSerializer)
 
+    @transaction.atomic
     def post(self, request, case_id):
         case = case_for(request, case_id, write=True)
         if not case:
@@ -629,20 +728,17 @@ class NoteListCreate(APIView):
 
 class ExportCreate(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ExportSerializer
 
     def post(self, request, case_id):
-        case = case_for(request, case_id, write=True)
+        case = case_for(request, case_id, action="export")
         if not case:
             return deny("Case write access denied.")
-        package = ExportPackage.objects.create(
-            case=case, requested_by=request.user, status="placeholder"
-        )
-        audit(request, case, "export.requested", "ExportPackage", package.id)
-        return Response(
-            {
-                "id": str(package.id),
-                "status": package.status,
-                "message": "Controlled export placeholder; no file was emitted.",
-            },
-            status=status.HTTP_202_ACCEPTED,
-        )
+        from reporting.services import create_package
+        from reporting.views import package_status
+
+        report = None
+        if request.data.get("report"):
+            report = get_object_or_404(Report, pk=request.data["report"], case=case)
+        package = create_package(case, request.user, report)
+        return Response(package_status(package), status=201)

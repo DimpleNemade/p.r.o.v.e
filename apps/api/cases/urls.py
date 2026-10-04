@@ -1,4 +1,6 @@
 from django.urls import path
+from reporting.views import ExportStatus, ExportDownload
+from investigations.review_views import FindingTransition
 from .views import (
     ArtifactDetail,
     ArtifactList,
@@ -10,6 +12,7 @@ from .views import (
     EvidenceDetail,
     EvidenceListCreate,
     EvidenceVerify,
+    EvidenceAcceptBaseline,
     ExportCreate,
     FindingDetail,
     FindingListCreate,
@@ -26,6 +29,10 @@ from .views import (
 )
 
 urlpatterns = [
+    path("exports/<uuid:package_id>/", ExportStatus.as_view()),
+    path("exports/<uuid:package_id>/download/", ExportDownload.as_view()),
+    path("findings/<uuid:finding_id>/transition/", FindingTransition.as_view()),
+    path("evidence/<uuid:evidence_id>/accept-baseline/", EvidenceAcceptBaseline.as_view()),
     path("cases/", CaseListCreate.as_view()),
     path("cases/<uuid:pk>/", CaseDetail.as_view()),
     path("cases/<uuid:case_id>/participants/", ParticipantList.as_view()),

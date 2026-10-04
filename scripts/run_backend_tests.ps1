@@ -15,7 +15,7 @@ if (-not $python) {
 $api = Join-Path $workspace "apps\api"
 Push-Location $api
 try {
-    & $python manage.py test
+    & $python manage.py test --settings=config.test_settings --noinput
     $djangoExit = $LASTEXITCODE
 } finally {
     Pop-Location

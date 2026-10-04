@@ -15,5 +15,5 @@ flowchart TD
   P --> D
   A --> D
   D --> R["Development report preview"]
-  R --> X["Export placeholder — no file"]
+  R --> X["Phase 3 controlled export package"]
 ```

@@ -26,6 +26,7 @@ repo.
 | 16 | [Finding-support relationship](16-finding-support-relationship.md) | erDiagram |
 | 17 | [Report-generation flow — Step 2](17-report-generation-flow-step-2.md) | flowchart |
 | 18 | [User permission flow](18-user-permission-flow.md) | flowchart |
+| 19 | [Phase 3 trust boundaries and workflows](19-phase3-trust-and-workflows.md) | 8 current diagrams |
 
 ## Validation
 
@@ -33,7 +34,6 @@ repo.
 python scripts/validate_mermaid.py
 ```
 
-The validator checks every `docs/**/*.md` file for a supported diagram header
-(`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `gantt`, `graph`, `erDiagram`) and
-a **balanced closing fence** for each block. SVG/PNG export is deferred until Mermaid CLI
-is part of the toolchain; GitHub renders the source blocks directly.
+The validator checks fences and supported headers, parses each block with Mermaid CLI,
+and renders every diagram to `docs/generated/mermaid`. Phase 3 visual inspection results
+are recorded in the implementation report.

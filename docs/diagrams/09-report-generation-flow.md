@@ -7,5 +7,5 @@ flowchart LR
   S --> D
   F --> D
   D --> R[Report draft]
-  R --> X[Controlled export placeholder]
+  R --> X[Controlled snapshot and verified package]
 ```

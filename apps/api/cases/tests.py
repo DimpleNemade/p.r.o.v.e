@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.conf import settings
 from django.core.management import call_command
 from rest_framework.test import APIClient
 from .models import Case, CaseParticipant
@@ -29,6 +30,9 @@ class InvestigationApiTests(TestCase):
             reference="TEST-0001", title="Synthetic case", owner=self.user
         )
         CaseParticipant.objects.create(case=self.case, user=self.user, permission="owner")
+        self.root = Path(settings.EVIDENCE_ROOT) / str(self.case.pk)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.capture = self.captureOnCommitCallbacks(execute=True)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
 
@@ -67,17 +71,16 @@ class InvestigationApiTests(TestCase):
         assert response.status_code == 403
 
     def test_evidence_hash_and_processing_create_provenance(self):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as handle:
-            handle.write(b"synthetic evidence")
-            source = Path(handle.name)
+        source = Path(self._make_fixture("sample.txt", b"synthetic evidence"))
         try:
             expected = hashlib.sha256(b"synthetic evidence").hexdigest()
             response = self.client.post(
                 f"/api/cases/{self.case.id}/evidence/",
                 {
                     "display_name": "sample.txt",
-                    "original_path": str(source),
+                    "original_path": source.name,
                     "expected_hash": expected,
+                    "is_synthetic": True,
                 },
                 format="json",
             )
@@ -86,9 +89,10 @@ class InvestigationApiTests(TestCase):
             verified = self.client.post(f"/api/evidence/{evidence_id}/verify/")
             assert verified.status_code == 200
             assert verified.data["verification_status"] == "verified"
-            job = self.client.post(
-                f"/api/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                job = self.client.post(
+                    f"/api/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
+                )
             assert job.status_code == 201
             assert Artifact.objects.filter(case=self.case).exists()
             assert ProvenanceLink.objects.filter(case=self.case).exists()
@@ -100,15 +104,13 @@ class InvestigationApiTests(TestCase):
             source.unlink(missing_ok=True)
 
     def test_hash_mismatch_is_recorded_and_processing_fails(self):
-        with tempfile.NamedTemporaryFile(delete=False) as handle:
-            handle.write(b"actual")
-            source = Path(handle.name)
+        source = Path(self._make_fixture("mismatch.bin", b"actual"))
         try:
             response = self.client.post(
                 f"/api/cases/{self.case.id}/evidence/",
                 {
                     "display_name": "mismatch.bin",
-                    "original_path": str(source),
+                    "original_path": source.name,
                     "expected_hash": "0" * 64,
                 },
                 format="json",
@@ -116,9 +118,10 @@ class InvestigationApiTests(TestCase):
             evidence_id = response.data["id"]
             verified = self.client.post(f"/api/evidence/{evidence_id}/verify/")
             assert verified.data["verification_status"] == "mismatch"
-            job = self.client.post(
-                f"/api/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                job = self.client.post(
+                    f"/api/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
+                )
             assert job.status_code == 409
             assert job.data["code"] == "integrity_required"
         finally:
@@ -132,7 +135,7 @@ class InvestigationApiTests(TestCase):
                 f"/api/v1/cases/{self.case.id}/evidence/",
                 {
                     "display_name": "workflow.txt",
-                    "original_path": str(source),
+                    "original_path": source.name,
                     "expected_hash": expected,
                     "is_synthetic": True,
                 },
@@ -142,9 +145,10 @@ class InvestigationApiTests(TestCase):
             verified = self.client.post(f"/api/v1/evidence/{evidence_id}/verify/")
             assert verified.status_code == 200
             assert self.client.get(f"/api/v1/evidence/{evidence_id}/").status_code == 200
-            job = self.client.post(
-                f"/api/v1/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
-            )
+            with self.captureOnCommitCallbacks(execute=True):
+                job = self.client.post(
+                    f"/api/v1/cases/{self.case.id}/jobs/", {"evidence": evidence_id}, format="json"
+                )
             assert job.status_code == 201
             job_detail = self.client.get(f"/api/v1/jobs/{job.data['id']}/")
             assert job_detail.data["status"] == "succeeded"
@@ -181,7 +185,7 @@ class InvestigationApiTests(TestCase):
             assert self.client.get(f"/api/v1/reports/{report.data['id']}/").status_code == 200
             audit_actions = {
                 event["action"]
-                for event in self.client.get(f"/api/v1/cases/{self.case.id}/audit/").data
+                for event in self.client.get(f"/api/v1/cases/{self.case.id}/audit/").data["results"]
             }
             assert {
                 "evidence.hash_verified",
@@ -195,7 +199,7 @@ class InvestigationApiTests(TestCase):
 
     def test_seed_demo_provides_complete_synthetic_case(self):
         call_command("seed_demo")
-        case = Case.objects.get(reference="DEMO-0001")
+        case = Case.objects.get(reference="DEMO-PHASE3-0001")
         assert (
             case.evidence_items.filter(is_synthetic=True, verification_status="verified").count()
             >= 2
@@ -205,9 +209,7 @@ class InvestigationApiTests(TestCase):
         assert case.findings.filter(supports__isnull=False).distinct().exists()
         assert case.reports.filter(status="draft").exists()
 
-    @staticmethod
-    def _make_fixture(name, contents):
-        handle = tempfile.NamedTemporaryFile(delete=False, suffix=name)
-        handle.write(contents)
-        handle.close()
-        return handle.name
+    def _make_fixture(self, name, contents):
+        source = self.root / name
+        source.write_bytes(contents)
+        return str(source)

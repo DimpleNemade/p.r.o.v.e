@@ -24,6 +24,7 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements.txt
       - run: pip install -r apps/api/requirements.txt
+      - run: pip check
       - name: Lint and format
         run: |
           python -m ruff check apps/api services scripts
@@ -57,6 +58,32 @@ jobs:
       - run: npm test
       - run: npm run format:check
       - run: npm run build
+      - run: npm audit --audit-level=moderate
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Create the repo-root virtualenv the launcher expects
+        run: python -m venv .venv && .venv/bin/pip install -r apps/api/requirements.txt
+      - run: npm ci
+        working-directory: apps/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Playwright journey (isolated database, evidence and output roots)
+        run: npm run e2e
+        working-directory: apps/web
 
   docs:
     name: Docs
@@ -66,4 +93,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install Mermaid CLI (used by the renderer)
+        run: npm ci
+        working-directory: apps/web
       - run: python scripts/validate_mermaid.py
