@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -6,6 +7,20 @@ const root = resolve(import.meta.dirname, "..");
 const files = process.argv.slice(2);
 const out = join(root, "docs", "generated", "mermaid");
 mkdirSync(out, { recursive: true });
+
+// CI containers typically run as root with unprivileged user namespaces
+// restricted, which Chromium's own sandbox refuses to start under. Disable
+// just the browser sandbox there; a local developer run keeps it enabled.
+let puppeteerConfigArgs = [];
+if (process.env.CI) {
+  const config = join(tmpdir(), "prove-mermaid-puppeteer-config.json");
+  writeFileSync(
+    config,
+    JSON.stringify({ args: ["--no-sandbox", "--disable-setuid-sandbox"] }),
+  );
+  puppeteerConfigArgs = ["--puppeteerConfigFile", config];
+}
+
 let rendered = 0;
 for (const file of files) {
   const text = readFileSync(file, "utf8");
@@ -26,10 +41,14 @@ for (const file of files) {
       "src",
       "cli.js",
     );
-    const result = spawnSync(process.execPath, [mermaidCli, "--input", source, "--output", target, "--quiet"], {
-      cwd: join(root, "apps", "web"),
-      encoding: "utf8",
-    });
+    const result = spawnSync(
+      process.execPath,
+      [mermaidCli, "--input", source, "--output", target, "--quiet", ...puppeteerConfigArgs],
+      {
+        cwd: join(root, "apps", "web"),
+        encoding: "utf8",
+      },
+    );
     if (result.status !== 0) {
       process.stderr.write(
         `${relative(root, file)} block ${index + 1}: ${result.error || result.stderr || result.stdout}`,
@@ -38,7 +57,7 @@ for (const file of files) {
     }
     const previewResult = spawnSync(
       process.execPath,
-      [mermaidCli, "--input", source, "--output", preview, "--quiet", "--scale", "1"],
+      [mermaidCli, "--input", source, "--output", preview, "--quiet", "--scale", "1", ...puppeteerConfigArgs],
       { cwd: join(root, "apps", "web"), encoding: "utf8" },
     );
     if (previewResult.status !== 0) {
