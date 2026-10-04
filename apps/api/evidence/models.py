@@ -13,12 +13,25 @@ class EvidenceItem(models.Model):
     acquisition_metadata = models.JSONField(default=dict, blank=True)
     hash_algorithm = models.CharField(max_length=20, default="SHA-256")
     expected_hash = models.CharField(max_length=64, blank=True)
+    baseline_hash = models.CharField(max_length=64, blank=True)
+    baseline_origin = models.CharField(max_length=30, blank=True)
+    baseline_accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="accepted_baselines",
+    )
+    baseline_accepted_at = models.DateTimeField(null=True, blank=True)
+    baseline_reason = models.TextField(blank=True)
     calculated_hash = models.CharField(max_length=64, blank=True)
     verification_status = models.CharField(
         max_length=30,
         default="unverified",
         choices=[
             ("unverified", "Unverified"),
+            ("baseline_pending", "Local baseline pending acceptance"),
+            ("baseline_accepted", "Accepted local baseline comparison"),
             ("verified", "Verified"),
             ("mismatch", "Mismatch"),
             ("unreadable", "Unreadable"),
@@ -47,6 +60,11 @@ class EvidenceHash(models.Model):
     algorithm = models.CharField(max_length=20, default="SHA-256")
     value = models.CharField(max_length=128)
     source = models.CharField(max_length=30, default="calculated")
+    status = models.CharField(max_length=30, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True
+    )
+    file_metadata = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
